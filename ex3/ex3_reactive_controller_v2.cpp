@@ -1,3 +1,4 @@
+// Ramin ja Oskarin koodi yhdistetty
 // from ros-control meta packages
 #include <controller_interface/controller.h>
 #include <hardware_interface/joint_command_interface.h>
@@ -327,6 +328,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         double v_tau=0.1;
         double tau_0=0;
         double own_dt;
+        target_time_ = 10;
         now=ros::Time::now();
         
         if (!trajectory_received)
@@ -334,7 +336,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         	f1_=f0_;
         } else
         
-        V0_ = diff(f0_, f1_)/10;
+        V0_ = diff(f0_, f1_)/target_time_;
         
         
         if (round==1)
@@ -445,6 +447,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
 
         // ********* 3. data 저장 *********
         save_data();
+        print_frame(f1_);
 
         // ********* 4. state 출력 *********
         print_state();
@@ -599,6 +602,24 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         }
         count++;
     }
+    
+    void print_frame(KDL::Frame f_to_print)
+    {
+        printf("\n");
+        printf("*** Print Frame  ***\n");
+        printf("Position:\n");
+        printf("[");
+        printf("%f, ", f0_.p(0));
+        printf("%f, ", f0_.p(1));
+        printf("%f]\n", f0_.p(2));
+        printf("\n");
+        printf("Orientation:\n");
+        printf("[[%f, %f, %f]\n", f0_.M.data[0], f0_.M.data[1], f0_.M.data[2]);
+        printf(" [%f, %f, %f]\n", f0_.M.data[3], f0_.M.data[4], f0_.M.data[5]);
+        printf(" [%f, %f, %f]]\n", f0_.M.data[6], f0_.M.data[7], f0_.M.data[8]);
+        printf("*** End of Print Frame  ***\n\n");
+    }
+
 
   private:
     // others
@@ -687,7 +708,8 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     // ros message
     std_msgs::Float64MultiArray msg_qd_, msg_q_, msg_e_;
     std_msgs::Float64MultiArray msg_SaveData_;
+    
+    int target_time_ = 1;
 };
 }; // namespace arm_controllers
 PLUGINLIB_EXPORT_CLASS(arm_controllers::Reactive_Controller_V2, controller_interface::ControllerBase)
-
