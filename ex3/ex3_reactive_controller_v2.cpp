@@ -220,16 +220,21 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         q_0_.data=Eigen::VectorXd::Zero(n_joints_);
         q_1_.data=Eigen::VectorXd::Zero(n_joints_);
         
-        for (size_t i = 0; i < n_joints_; i++)
-        {
-        	q_0_(i)=0;
-        	q_1_(i)=PI/2;
-        }
         //Test: Let's try to do it directly in task space:
-        f0_.p(0) = 0.1;
-        f0_.p(1) = 0.1;
-        f0_.p(2) = 0.5;
-        f0_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
+        //f0_.p(0) = 0.1;
+        //f0_.p(1) = 0.1;
+        //f0_.p(2) = 0.5;
+        //f0_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
+        
+        for (int i = 0; i < n_joints_; i++)
+        {
+            q0_(i) = joints_[i].getPosition();
+            qdot0_(i) = joints_[i].getVelocity();
+        }
+        
+        fk_pos_solver_->JntToCart(q0_, f0_);
+        trajectory_received = false;
+        
         
         // 5.2 Matrix 초기화 (사이즈 정의 및 값 0)
         M_.resize(kdl_chain_.getNrOfJoints());
@@ -260,11 +265,35 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         {
             ROS_ERROR_STREAM("Dimension of command (" << msg->data.size() << ") does not match number of joints (" << n_joints_ << ")! Not executing!");
             return;
-        }
-        f1_.p(0) = msg->data[0];
-        f1_.p(1) = msg->data[1];
-        f1_.p(2) = msg->data[2];
-        f1_.M = KDL::Rotation(KDL::Rotation::RPY(msg->data[3], msg->data[4], msg->data[5]));
+        }   
+        point1_.p(0) = msg->data[0];
+        point1_.p(1) = msg->data[1];
+        point1_.p(2) = msg->data[2];
+        point1_.M = KDL::Rotation(KDL::Rotation::RPY(msg->data[3], msg->data[4], msg->data[5]));
+        
+        f1_=point1_;
+        
+        point2_.p(0) = msg->data[6];
+        point2_.p(1) = msg->data[7];
+        point2_.p(2) = msg->data[8];
+        point2_.M = KDL::Rotation(KDL::Rotation::RPY(msg->data[9], msg->data[10], msg->data[11]));
+        
+        point3_.p(0) = msg->data[12];
+        point3_.p(1) = msg->data[13];
+        point3_.p(2) = msg->data[14];
+        point3_.M = KDL::Rotation(KDL::Rotation::RPY(msg->data[15], msg->data[16], msg->data[17]));
+        
+        point4_.p(0) = msg->data[18];
+        point4_.p(1) = msg->data[19];
+        point4_.p(2) = msg->data[20];
+        point4_.M = KDL::Rotation(KDL::Rotation::RPY(msg->data[21], msg->data[22], msg->data[23]));
+        
+        trajectory_received = true;
+        
+        points_.push_back(point1_);
+        points_.push_back(point2_);
+        points_.push_back(point3_);
+        points_.push_back(point4_);
         
     }
 
@@ -274,6 +303,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         start_time=ros::Time::now();
         round = 1;
         ROS_INFO("Starting Computed Torque Controller");
+        
     }
 
     void update(const ros::Time &time, const ros::Duration &period)
@@ -288,7 +318,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         {
             q_(i) = joints_[i].getPosition();
             qdot_(i) = joints_[i].getVelocity();
-        }
+        } 
 
         // ********* 1. Desired Trajecoty in Joint Space *********
         //Straight line trajectory in joint space:
@@ -296,6 +326,11 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         double tau_0=0;
         double own_dt;
         now=ros::Time::now();
+        
+        if (!trajectory_received)
+        {
+        	f1_=f0_;
+        } else
         
         V0_ = diff(f0_, f1_)/10;
         
@@ -346,6 +381,8 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         xerr_(3) = xerr_temp_(3);
         xerr_(4) = xerr_temp_(4);
         xerr_(5) = xerr_temp_(5);
+        
+        ROS_INFO("xerr_(0), xerr_(1), xerr_(2) here: %f , %f , %f", (double)xerr_(0), (double)xerr_(1), (double)xerr_(2));
         
         jnt_to_jac_solver_->JntToJac(q_, J_);
         //jnt_to_jac_solver_->JntToJac(qd_, Jd_);
@@ -410,6 +447,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         
         round+=1;
         old_time=now;
+        
     }
 
     void stopping(const ros::Time &time)
@@ -610,6 +648,15 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     KDL::Frame f1_;
     KDL::Twist V0_;
     Eigen::Matrix<double, num_taskspace, 1> xd_temp_;
+    KDL::JntArray q0_, qdot0_;
+    
+    KDL::Frame point1_;
+    KDL::Frame point2_;
+    KDL::Frame point3_;
+    KDL::Frame point4_;
+    bool trajectory_received;
+    
+    std::vector<KDL::Frame> points_;
     
     ros::Time start_time;
     ros::Time now;
