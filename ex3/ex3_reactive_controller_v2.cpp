@@ -34,6 +34,8 @@
 #define f 1
 #define t_set 1
 
+#define distance_limit 0.0001
+
 
 namespace arm_controllers
 {
@@ -384,6 +386,8 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         
         ROS_INFO("xerr_(0), xerr_(1), xerr_(2) here: %f , %f , %f", (double)xerr_(0), (double)xerr_(1), (double)xerr_(2));
         
+        
+        
         jnt_to_jac_solver_->JntToJac(q_, J_);
         //jnt_to_jac_solver_->JntToJac(qd_, Jd_);
         //Vd_ = Jd_.data * qd_dot_.data;
@@ -655,6 +659,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     KDL::Frame point3_;
     KDL::Frame point4_;
     bool trajectory_received;
+    double distance_limit;
     
     std::vector<KDL::Frame> points_;
     
