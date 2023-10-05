@@ -59,11 +59,36 @@ int main(int argc, char **argv)
   double rot1=0;
   double rot2=0;
   double rot3=0;
-  while (ros::ok())
-  {
   
-    std_msgs::Float64MultiArray trajectory_msg;
-  /*  
+  std::vector<double> point1;
+  std::vector<double> point2;
+  std::vector<double> point3;
+  std::vector<double> point4;
+  //std::vector<double> point5;
+  
+  std_msgs::Float64MultiArray trajectory_msg;
+  
+  for (int i = 0; i < 4; i++)
+  {
+  	trajectory_msg.data.push_back(x);
+  	trajectory_msg.data.push_back(y);
+  	trajectory_msg.data.push_back(z);
+  	trajectory_msg.data.push_back(rot1);
+  	trajectory_msg.data.push_back(rot2);
+  	trajectory_msg.data.push_back(rot3);
+  	x+=0.1;
+  	y+=0.1;		
+  }
+  
+  ROS_INFO("Publisher publishing!");
+  trajectory_publisher.publish(trajectory_msg);
+  ros::spinOnce();
+  
+  //while (ros::ok())
+  //{
+  
+    //std_msgs::Float64MultiArray trajectory_msg;
+  /* Test 1:  
     if (count <= 500)
     {
     	//x += 0.1;
@@ -91,7 +116,7 @@ int main(int argc, char **argv)
     	y-=0.0001;
     }*/
     
-    if (count == 0)
+    /* Test 2: if (count == 0)
     {
     	x = 0.3;
     }
@@ -128,13 +153,13 @@ int main(int argc, char **argv)
      * given as a template parameter to the advertise<>() call, as was done
      * in the constructor above.
      */
-    trajectory_publisher.publish(trajectory_msg);
+    //trajectory_publisher.publish(trajectory_msg);
 
-    ros::spinOnce();
+    //ros::spinOnce();
 
-    loop_rate.sleep();
-    ++count;
-  }
+    //loop_rate.sleep();
+    //++count;
+  //}
 
 
   return 0;
