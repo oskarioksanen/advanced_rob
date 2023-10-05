@@ -45,7 +45,8 @@ int main(int argc, char **argv)
    */
   ros::Publisher trajectory_publisher = n.advertise<std_msgs::Float64MultiArray>("trajectory_topic", 1000);
 
-  ros::Rate loop_rate(10);
+  //ros::Rate loop_rate(10);
+  ros::Rate loop_rate(0.1);
 
   /**
    * A count of how many messages we have sent. This is used to create
@@ -54,18 +55,15 @@ int main(int argc, char **argv)
   int count = 0;
   double x=0.1;
   double y=0.1;
-  double z= 0.8; //??
+  double z= 0.5; //??
   double rot1=0;
   double rot2=0;
   double rot3=0;
   while (ros::ok())
   {
-    /**
-     * This is a message object. You stuff it with data, and then publish it.
-     */
-    //std_msgs::String msg;
+  
     std_msgs::Float64MultiArray trajectory_msg;
-    
+  /*  
     if (count <= 500)
     {
     	//x += 0.1;
@@ -75,31 +73,40 @@ int main(int argc, char **argv)
     {
     	//x=5;
     	//y+=0.1;
-    	x+=0.01;
+    	x+=0.0001;
     }
     else if (count>1000 && count <= 1500)
     {
     	//x-=0.1;
-    	y+=0.01;
+    	y+=0.0001;
     }
     else if (count>1500 && count <= 2000)
     {
     	//y-=0.1;
-    	x-=0.01;
+    	x-=0.0001;
     }
     else if (count>2000 && count <= 2500)
     {
     	//y-=0.1;
-    	y-=0.01;
+    	y-=0.0001;
+    }*/
+    
+    if (count == 0)
+    {
+    	x = 0.3;
     }
-    
-    
-    //trajectory_msg.data[0]=x;
-    //trajectory_msg.data[1]=y;
-    //trajectory_msg.data[2]=z;
-    //trajectory_msg.data[3]=rot1;
-    //trajectory_msg.data[4]=rot2;
-    //trajectory_msg.data[5]=rot3;
+    else if (count==1)
+    {
+    	y=0.3;
+    }
+    else if (count==2)
+    {
+    	x=0.1;
+    }
+    else if (count==3)
+    {
+    	y=0.1;
+    }
     
     trajectory_msg.data.push_back(x);
     trajectory_msg.data.push_back(y);
