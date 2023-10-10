@@ -25,6 +25,8 @@
 #include <utils/pseudo_inversion.h>
 #include <utils/skew_symmetric.h>
 
+#include <cmath>
+
 #define PI 3.141592
 #define D2R PI / 180.0
 #define R2D 180.0 / PI
@@ -34,8 +36,6 @@
 #define b 2.5
 #define f 1
 #define t_set 1
-
-#define distance_limit 0.0001
 
 
 namespace arm_controllers
@@ -220,7 +220,8 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         e_dot_.data = Eigen::VectorXd::Zero(n_joints_);
         e_int_.data = Eigen::VectorXd::Zero(n_joints_);
         
-        q_0_.data=Eigen::VectorXd::Zero(n_joints_);
+        q0_.data=Eigen::VectorXd::Zero(n_joints_);
+        qdot0_.data = Eigen::VectorXd::Zero(n_joints_);
         q_1_.data=Eigen::VectorXd::Zero(n_joints_);
         
         //Test: Let's try to do it directly in task space:
@@ -232,12 +233,19 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         for (int i = 0; i < n_joints_; i++)
         {
             q0_(i) = joints_[i].getPosition();
-            qdot0_(i) = joints_[i].getVelocity();
+            //qdot0_(i) = joints_[i].getVelocity();
+            qdot0_(i) = 0;
         }
+        ROS_INFO("q0_ ja qdot0_ alustus onnistuu");
         
         fk_pos_solver_->JntToCart(q0_, f0_);
-        trajectory_received = false;
-        
+        //trajectory_received = false;
+        point1_reached = false;
+        point2_reached = false;
+        point3_reached = false;
+        point4_reached = false;
+        distance_limit = 0.001;
+        subs_count=0;
         
         // 5.2 Matrix 초기화 (사이즈 정의 및 값 0)
         M_.resize(kdl_chain_.getNrOfJoints());
@@ -258,18 +266,44 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
 
         // 6.2 subsriber
         sub_x_cmd_ = n.subscribe<std_msgs::Float64MultiArray>("/trajectory_topic", 1, &Reactive_Controller_V2::commandCB, this);
+        
+        ROS_INFO("Päästään initin loppuun");
+        //ros::spin();
+        
+        //Testi:
+        //Poista nämä sitten kun käyttää subscriberia. Testasin vaan ilman subscriberia.
+        point1_.p(0) = f0_.p(0)+0.1;
+        point1_.p(1) = f0_.p(1);
+        point1_.p(2) = f0_.p(2)-0.1;
+        point1_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
+        
+        point2_.p(0) = point1_.p(0);
+        point2_.p(1) = point1_.p(1)+0.1;
+        point2_.p(2) = point1_.p(2)-0.1;
+        point2_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
+        
+        point3_.p(0) = point2_.p(0)-0.1;
+        point3_.p(1) = point2_.p(1);
+        point3_.p(2) = point2_.p(2)-0.1;
+        point3_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
+        
+        point4_.p(0) = point3_.p(0);
+        point4_.p(1) = point3_.p(1)-0.1;
+        point4_.p(2) = point3_.p(2)-0.1;
+        point4_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
+        trajectory_received = true;
+        f1_=point1_;
 
         return true;
     }
 
     void commandCB(const std_msgs::Float64MultiArrayConstPtr &msg)
     {
-        if (msg->data.size() != n_joints_)
-        {
-            ROS_ERROR_STREAM("Dimension of command (" << msg->data.size() << ") does not match number of joints (" << n_joints_ << ")! Not executing!");
-            return;
-        }   
-        point1_.p(0) = msg->data[0];
+    	//Tää subscriberi ei jostain syystä toimi. Kun koitin antaa koko trajectoryn kerralla niin se ei tunnu saavan sitä. Koitin antaa ne myös pisteen kerrallaan, silloin se sai niistä pari
+    	//muttei kaikkia. En tiiä jääkö se johonkin tonne updateen jumiin vai pyöriiks noi publisheri ja subscriberi jotenkin eri tahtiin tms. Tän takia testasin antaa noi pisteet jo initissä
+    	//muttei se toimi kunnolla.
+    	//Test 1: 
+        /*point1_.p(0) = msg->data[0];
         point1_.p(1) = msg->data[1];
         point1_.p(2) = msg->data[2];
         point1_.M = KDL::Rotation(KDL::Rotation::RPY(msg->data[3], msg->data[4], msg->data[5]));
@@ -292,11 +326,58 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         point4_.M = KDL::Rotation(KDL::Rotation::RPY(msg->data[21], msg->data[22], msg->data[23]));
         
         trajectory_received = true;
+        ROS_INFO("Trajectory received, target:");
+        print_frame(f1_);
         
-        points_.push_back(point1_);
+        /*points_.push_back(point1_);
         points_.push_back(point2_);
         points_.push_back(point3_);
-        points_.push_back(point4_);
+        points_.push_back(point4_);*/
+        
+        
+        //Test 2:
+        /*if (subs_count == 0)
+        {
+        	point1_.p(0) = msg->data[0];
+        	point1_.p(1) = msg->data[1];
+        	point1_.p(2) = msg->data[2];
+        	point1_.M = KDL::Rotation(KDL::Rotation::RPY(msg->data[3], msg->data[4], msg->data[5]));
+        	ROS_INFO("Point1 received!");
+        	//Uus testi:
+        	//f1_=point1_;
+        	//trajectory_received = true;
+        	
+        	
+        }
+        if (subs_count == 1)
+        {
+        	point2_.p(0) = msg->data[0];
+        	point2_.p(1) = msg->data[1];
+        	point2_.p(2) = msg->data[2];
+        	point2_.M = KDL::Rotation(KDL::Rotation::RPY(msg->data[3], msg->data[4], msg->data[5]));
+        	ROS_INFO("Point2 received!");
+        }
+        if (subs_count == 2)
+        {
+        	point3_.p(0) = msg->data[0];
+        	point3_.p(1) = msg->data[1];
+        	point3_.p(2) = msg->data[2];
+        	point3_.M = KDL::Rotation(KDL::Rotation::RPY(msg->data[3], msg->data[4], msg->data[5]));
+        	ROS_INFO("Point3 received!");
+        }
+        if (subs_count == 3)
+        {
+        	point4_.p(0) = msg->data[0];
+        	point4_.p(1) = msg->data[1];
+        	point4_.p(2) = msg->data[2];
+        	point4_.M = KDL::Rotation(KDL::Rotation::RPY(msg->data[3], msg->data[4], msg->data[5]));
+        	trajectory_received = true;
+        	ROS_INFO("Point4 and trajectory received!");
+        	//Tän voi periaatteessa laittaa ehkä jo aiemminkinkin:
+        	f1_=point1_;
+        	print_frame(f1_);
+        }
+        subs_count+=1;*/
         
     }
 
@@ -328,14 +409,50 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         double v_tau=0.1;
         double tau_0=0;
         double own_dt;
-        target_time_ = 10;
+        target_time_ = 5;
         now=ros::Time::now();
         
+        fk_pos_solver_->JntToCart(q_, x_);
+        distance = sqrt(pow(f1_.p(0)-x_.p(0),2)+pow(f1_.p(1)-x_.p(1),2)+pow(f1_.p(2)-x_.p(2),2));
         if (!trajectory_received)
         {
         	f1_=f0_;
-        } else
-        
+        }
+        else
+        {
+        	if (distance <= distance_limit && point1_reached == false)
+        	{
+        		f0_=point1_;
+        		f1_=point2_;
+        		point1_reached = true;
+        		ROS_INFO("Point1 reached!");
+        	}
+        	if (distance <= distance_limit && point1_reached == true && point2_reached == false)
+        	{
+        		f0_=point2_;
+        		f1_=point3_;
+        		point2_reached = true;
+        		ROS_INFO("Point2 reached!");
+        	}
+        	if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == false)
+        	{
+        		f0_=point3_;
+        		f1_=point4_;
+        		point3_reached = true;
+        		ROS_INFO("Point3 reached!");
+        	}
+        	if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == true && point4_reached == false)
+        	{
+        		//f0_=point4_;
+        		//f1_=point1_;
+        		point4_reached = true;
+        		ROS_INFO("Point4 reached!");
+        		return;
+        		// Jos haluaa että se päättyy tohon niin return tai sit jos haluaa että se toistaa samaa niin tossa vois varmaan muuttaa noi kaikki samaks kuin initissä eli alussa.	
+        	}
+        	 	
+        }
+        //Tota koodia vois vielä parannella paljonkin, esim voi vaan päivittää tyyliin points_reached++ ja verrata sitä aina number_of_pointsiin tms. Muutenkin tohon vois ehkä pistää jonkun for-silmukan.
         V0_ = diff(f0_, f1_)/target_time_;
         
         
@@ -367,7 +484,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         e_int_.data = qd_.data - q_.data; // (To do: e_int 업데이트 필요요)
         
         //Own code:
-        fk_pos_solver_->JntToCart(q_, x_);
+        //fk_pos_solver_->JntToCart(q_, x_); siirsin tämän ylemmäs
         //Test:
         //fk_pos_solver_->JntToCart(qd_, xd_);
         //V0_ = diff(f0_, f1_)/10;
@@ -386,8 +503,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         xerr_(4) = xerr_temp_(4);
         xerr_(5) = xerr_temp_(5);
         
-        ROS_INFO("xerr_(0), xerr_(1), xerr_(2) here: %f , %f , %f", (double)xerr_(0), (double)xerr_(1), (double)xerr_(2));
-        
+        //ROS_INFO("xerr_(0), xerr_(1), xerr_(2) here: %f , %f , %f", (double)xerr_(0), (double)xerr_(1), (double)xerr_(2));
         
         
         jnt_to_jac_solver_->JntToJac(q_, J_);
@@ -447,10 +563,10 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
 
         // ********* 3. data 저장 *********
         save_data();
-        print_frame(f1_);
+        //print_frame(f1_);
 
         // ********* 4. state 출력 *********
-        print_state();
+        //print_state();
         
         round+=1;
         old_time=now;
@@ -668,7 +784,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     int round;
     double tau_k;
     double tau_old;
-    KDL::JntArray q_0_, q_1_;
+    KDL::JntArray q_1_;
     KDL::Frame f0_;
     KDL::Frame f1_;
     KDL::Twist V0_;
@@ -681,6 +797,12 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     KDL::Frame point4_;
     bool trajectory_received;
     double distance_limit;
+    double distance;
+    bool point1_reached;
+    bool point2_reached;
+    bool point3_reached;
+    bool point4_reached;
+    int subs_count;
     
     std::vector<KDL::Frame> points_;
     
