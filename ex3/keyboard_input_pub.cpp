@@ -21,8 +21,8 @@ int main(int argc, char **argv)
   
     std_msgs::String keyboard_input;
     std::string input;
-    
-    std::cout << "Enter \"opposite direction\" to change the robot trajectory (Other input changes trajectory back to original)" << std::endl;
+    std::cout << "\n";
+    std::cout << "Enter \"opposite direction\" or \"o\" to change the robot trajectory (Other input changes trajectory back to original):" << std::endl;
     std::getline(std::cin, input);
     
     for (char &c : input)
@@ -30,7 +30,7 @@ int main(int argc, char **argv)
     	c = std::tolower(c);
     }
     
-    if (input == "opposite direction")
+    if (input == "opposite direction" or "o")
     {
     	keyboard_input.data = "opposite";
     }
@@ -40,6 +40,7 @@ int main(int argc, char **argv)
     }
 
     ROS_INFO("Publisher publishing!");
+    std::cout << "\n";
     trajectory_publisher.publish(keyboard_input);
     
     ros::spinOnce();
