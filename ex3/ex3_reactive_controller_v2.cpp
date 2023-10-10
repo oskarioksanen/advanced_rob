@@ -5,6 +5,7 @@
 
 #include <pluginlib/class_list_macros.h>
 #include <std_msgs/Float64MultiArray.h>
+#include <std_msgs/String.h>
 
 #include <urdf/model.h>
 
@@ -230,15 +231,8 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         //f0_.p(2) = 0.5;
         //f0_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
         
-        for (int i = 0; i < n_joints_; i++)
-        {
-            q0_(i) = joints_[i].getPosition();
-            //qdot0_(i) = joints_[i].getVelocity();
-            qdot0_(i) = 0;
-        }
-        ROS_INFO("q0_ ja qdot0_ alustus onnistuu");
-        
-        fk_pos_solver_->JntToCart(q0_, f0_);
+        f0_ = get_current_frame();
+
         //trajectory_received = false;
         point1_reached = false;
         point2_reached = false;
@@ -387,7 +381,21 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         
     }
     
-    void keyboardCommandCB(const std_msgs::String::ConstPtr& keyboard_msg)
+    KDL::Frame get_current_frame()
+    {
+        KDL::Frame frame_to_return;
+        for (int i = 0; i < n_joints_; i++)
+        {
+            q0_(i) = joints_[i].getPosition();
+            //qdot0_(i) = joints_[i].getVelocity();
+            qdot0_(i) = 0;
+        }
+        
+        fk_pos_solver_->JntToCart(q0_, frame_to_return);
+        return frame_to_return;
+    }
+
+    void keyboardCommandCB(const std_msgs::String::ConstPtr &keyboard_msg)
     {
      if (keyboard_msg->data == "opposite")
      {
@@ -901,6 +909,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     ros::Publisher pub_SaveData_;
     
     ros::Subscriber sub_x_cmd_;
+    ros::Subscriber sub_keyboard_input_;
 
     // ros message
     std_msgs::Float64MultiArray msg_qd_, msg_q_, msg_e_;
