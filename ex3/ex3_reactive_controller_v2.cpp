@@ -244,7 +244,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         point2_reached = false;
         point3_reached = false;
         point4_reached = false;
-        distance_limit = 0.001;
+        distance_limit = 0.01;
         subs_count=0;
         
         // 5.2 Matrix 초기화 (사이즈 정의 및 값 0)
@@ -261,6 +261,10 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         pub_qd_ = n.advertise<std_msgs::Float64MultiArray>("qd", 1000);
         pub_q_ = n.advertise<std_msgs::Float64MultiArray>("q", 1000);
         pub_e_ = n.advertise<std_msgs::Float64MultiArray>("e", 1000);
+        
+        pub_x_ = n.advertise<std_msgs::Float64MultiArray>("x", 1000);
+        pub_y_ = n.advertise<std_msgs::Float64MultiArray>("y", 1000);
+        pub_z_ = n.advertise<std_msgs::Float64MultiArray>("z", 1000);
 
         pub_SaveData_ = n.advertise<std_msgs::Float64MultiArray>("SaveData", 1000); // 뒤에 숫자는?
 
@@ -272,24 +276,24 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         
         //Testi:
         //Poista nämä sitten kun käyttää subscriberia. Testasin vaan ilman subscriberia.
-        point1_.p(0) = f0_.p(0)+0.1;
+        point1_.p(0) = f0_.p(0);
         point1_.p(1) = f0_.p(1);
-        point1_.p(2) = f0_.p(2)-0.1;
+        point1_.p(2) = f0_.p(2)-0.2;
         point1_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
         
-        point2_.p(0) = point1_.p(0);
-        point2_.p(1) = point1_.p(1)+0.1;
+        point2_.p(0) = point1_.p(0)-0.2;
+        point2_.p(1) = point1_.p(1);
         point2_.p(2) = point1_.p(2)-0.1;
         point2_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
         
-        point3_.p(0) = point2_.p(0)-0.1;
+        point3_.p(0) = point2_.p(0);
         point3_.p(1) = point2_.p(1);
-        point3_.p(2) = point2_.p(2)-0.1;
+        point3_.p(2) = point2_.p(2)+0.15;
         point3_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
         
-        point4_.p(0) = point3_.p(0);
-        point4_.p(1) = point3_.p(1)-0.1;
-        point4_.p(2) = point3_.p(2)-0.1;
+        point4_.p(0) = point3_.p(0)+0.2;
+        point4_.p(1) = point3_.p(1);
+        point4_.p(2) = point3_.p(2);
         point4_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
         trajectory_received = true;
         f1_=point1_;
@@ -327,7 +331,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         
         trajectory_received = true;
         ROS_INFO("Trajectory received, target:");
-        print_frame(f1_);
+        print_frame(f1_);*/
         
         /*points_.push_back(point1_);
         points_.push_back(point2_);
@@ -414,6 +418,8 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         
         fk_pos_solver_->JntToCart(q_, x_);
         distance = sqrt(pow(f1_.p(0)-x_.p(0),2)+pow(f1_.p(1)-x_.p(1),2)+pow(f1_.p(2)-x_.p(2),2));
+        //ROS_INFO("Distance here: %f", distance);
+        
         if (!trajectory_received)
         {
         	f1_=f0_;
@@ -427,27 +433,29 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         		point1_reached = true;
         		ROS_INFO("Point1 reached!");
         	}
-        	if (distance <= distance_limit && point1_reached == true && point2_reached == false)
+        	else if (distance <= distance_limit && point1_reached == true && point2_reached == false)
         	{
         		f0_=point2_;
         		f1_=point3_;
         		point2_reached = true;
         		ROS_INFO("Point2 reached!");
         	}
-        	if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == false)
+        	else if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == false)
         	{
         		f0_=point3_;
         		f1_=point4_;
         		point3_reached = true;
         		ROS_INFO("Point3 reached!");
         	}
-        	if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == true && point4_reached == false)
+        	else if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == true && point4_reached == false)
         	{
-        		//f0_=point4_;
-        		//f1_=point1_;
-        		point4_reached = true;
+        		f0_=point4_;
+        		f1_=point1_;
+        		point1_reached = false;
+        		point2_reached = false;
+        		point3_reached = false;
         		ROS_INFO("Point4 reached!");
-        		return;
+        		//return;
         		// Jos haluaa että se päättyy tohon niin return tai sit jos haluaa että se toistaa samaa niin tossa vois varmaan muuttaa noi kaikki samaks kuin initissä eli alussa.	
         	}
         	 	
@@ -651,6 +659,10 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         msg_qd_.data.clear();
         msg_q_.data.clear();
         msg_e_.data.clear();
+        
+        msg_x_.data.clear();
+        msg_y_.data.clear();
+        msg_z_.data.clear();
 
         msg_SaveData_.data.clear();
 
@@ -661,6 +673,9 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
             msg_q_.data.push_back(q_(i));
             msg_e_.data.push_back(e_(i));
         }
+        msg_x_.data.push_back(x_.p(0));
+        msg_y_.data.push_back(x_.p(1));
+        msg_z_.data.push_back(x_.p(2));
 
         for (int i = 0; i < SaveDataMax; i++)
         {
@@ -671,6 +686,10 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         pub_qd_.publish(msg_qd_);
         pub_q_.publish(msg_q_);
         pub_e_.publish(msg_e_);
+        
+        pub_x_.publish(msg_x_);
+        pub_y_.publish(msg_y_);
+        pub_z_.publish(msg_z_);
 
         pub_SaveData_.publish(msg_SaveData_);
     }
@@ -823,6 +842,9 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
 
     // ros publisher
     ros::Publisher pub_qd_, pub_q_, pub_e_;
+    
+    ros::Publisher pub_x_, pub_y_, pub_z_;
+    
     ros::Publisher pub_SaveData_;
     
     ros::Subscriber sub_x_cmd_;
@@ -830,6 +852,8 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     // ros message
     std_msgs::Float64MultiArray msg_qd_, msg_q_, msg_e_;
     std_msgs::Float64MultiArray msg_SaveData_;
+    
+    std_msgs::Float64MultiArray msg_x_, msg_y_, msg_z_;
     
     int target_time_ = 1;
 };
