@@ -244,6 +244,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         point2_reached = false;
         point3_reached = false;
         point4_reached = false;
+        opposite_direction = false;
         distance_limit = 0.01;
         subs_count=0;
         
@@ -269,7 +270,8 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         pub_SaveData_ = n.advertise<std_msgs::Float64MultiArray>("SaveData", 1000); // 뒤에 숫자는?
 
         // 6.2 subsriber
-        sub_x_cmd_ = n.subscribe<std_msgs::Float64MultiArray>("/trajectory_topic", 1, &Reactive_Controller_V2::commandCB, this);
+        //sub_x_cmd_ = n.subscribe<std_msgs::Float64MultiArray>("/trajectory_topic", 1, &Reactive_Controller_V2::commandCB, this);
+        sub_keyboard_input_ = n.subscribe<std_msgs::String>("/keyboard_input_topic", 1, &Reactive_Controller_V2::keyboardCommandCB, this);
         
         ROS_INFO("Päästään initin loppuun");
         //ros::spin();
@@ -384,6 +386,25 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         subs_count+=1;*/
         
     }
+    
+    void keyboardCommandCB(const std_msgs::String::ConstPtr& keyboard_msg)
+    {
+     if (keyboard_msg->data == "opposite")
+     {
+     	opposite_direction = true;
+     	ROS_INFO("Received opposite-direction-command!");
+     }
+     else if (keyboard_msg->data == "original")
+     {
+     	opposite_direction = false;
+     	ROS_INFO("Received original-direction-command!");
+     }
+     else
+     {
+     	ROS_INFO("Unknown command, direction will remain as is!");
+     }
+     	
+    }
 
     void starting(const ros::Time &time)
     {
@@ -429,28 +450,59 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         	if (distance <= distance_limit && point1_reached == false)
         	{
         		f0_=point1_;
-        		f1_=point2_;
+        		if (opposite_direction)
+        		{
+        			f1_=point4_;
+        		}
+        		else
+        		{
+        			f1_=point2_;	
+        		}
+        		
         		point1_reached = true;
         		ROS_INFO("Point1 reached!");
         	}
         	else if (distance <= distance_limit && point1_reached == true && point2_reached == false)
         	{
         		f0_=point2_;
-        		f1_=point3_;
+        		if (opposite_direction)
+        		{
+        			f1_=point1_;
+        		}
+        		else
+        		{
+        			f1_=point3_;
+        		}
+        		
         		point2_reached = true;
         		ROS_INFO("Point2 reached!");
         	}
         	else if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == false)
         	{
         		f0_=point3_;
-        		f1_=point4_;
+        		if (opposite_direction)
+        		{
+        			f1_=point2_;
+        		}
+        		else
+        		{
+        			f1_=point4_;
+        		}
+        		
         		point3_reached = true;
         		ROS_INFO("Point3 reached!");
         	}
         	else if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == true && point4_reached == false)
         	{
         		f0_=point4_;
-        		f1_=point1_;
+        		if (opposite_direction)
+        		{
+        			f1_=point3_;
+        		}
+        		else
+        		{
+        			f1_=point1_;
+        		}
         		point1_reached = false;
         		point2_reached = false;
         		point3_reached = false;
@@ -821,6 +873,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     bool point2_reached;
     bool point3_reached;
     bool point4_reached;
+    bool opposite_direction;
     int subs_count;
     
     std::vector<KDL::Frame> points_;
