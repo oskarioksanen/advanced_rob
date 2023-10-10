@@ -293,6 +293,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         point4_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
         trajectory_received = true;
         f1_=point1_;
+        current_f1_name_ = "point1_";
 
         return true;
     }
@@ -401,11 +402,93 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
      {
      	opposite_direction = true;
      	ROS_INFO("Received opposite-direction-command!");
+     	
+     	//Koitetaan lisätä f1_:n päivitys heti tähän:
+     	if (current_f1_name_ == "point4_")
+     	{
+     		f0_=get_current_frame();
+     		f1_=point3_;
+     		current_f1_name_ = "point3_";
+     		point4_reached = true;
+     		point3_reached = false;
+     	}
+     	else if (current_f1_name_ == "point3_")
+     	{
+     		f0_=get_current_frame();
+     		f1_=point2_;
+     		current_f1_name_ = "point2_";
+     		point4_reached = true; 
+     		point3_reached = true;
+     		point2_reached = false;
+     	}
+     	else if (current_f1_name_ == "point2_")
+     	{
+     		f0_=get_current_frame();
+     		f1_=point1_;
+     		current_f1_name_ = "point1_";
+     		point4_reached = true;
+     		point3_reached = true;
+     		point2_reached = true;
+     		point1_reached = false;
+     	}
+     	else
+     	{
+     		f0_=get_current_frame();
+     		f1_=point4_;
+     		current_f1_name_ = "point4_";
+     		point4_reached = false;
+     		//Pitäisikö tässä päivittää kaikki falseksi?
+     		//Testi:
+     		point3_reached = false;
+     		point2_reached = false;
+     		point1_reached = false;
+     	}
+     	
+     	
      }
      else if (keyboard_msg->data == "original")
      {
      	opposite_direction = false;
      	ROS_INFO("Received original-direction-command!");
+     	if (current_f1_name_ == "point1_")
+     	{
+     		f0_=get_current_frame();
+     		f1_=point2_;
+     		current_f1_name_ = "point2_";
+     		point1_reached = true;
+     		point2_reached = false;
+     	}
+     	else if (current_f1_name_ == "point2_")
+     	{
+     		f0_=get_current_frame();
+     		f1_=point3_;
+     		current_f1_name_ = "point3_";
+     		point1_reached = true;
+     		point2_reached = true;
+     		point3_reached = false;	
+     	}
+     	else if (current_f1_name_ == "point3_")
+     	{
+     		f0_=get_current_frame();
+     		f1_=point4_;
+     		current_f1_name_ = "point4_";
+     		point1_reached = true;
+     		point2_reached = true;
+     		point3_reached = true;
+     		point4_reached = false;	
+     	}
+     	else
+     	{
+     		f0_=get_current_frame();
+     		f1_=point1_;
+     		current_f1_name_ = "point1_";
+     		point1_reached = false;
+     		//Pitäisikö tässä päivittää kaikki falseksi?
+     		point2_reached = false;
+     		point3_reached = false;
+     		point4_reached = false;
+     	}
+     	
      }
      else
      {
@@ -455,71 +538,86 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         }
         else
         {
-        	if (distance <= distance_limit && point1_reached == false)
+        	if (opposite_direction)
         	{
-        		f0_=point1_;
-        		if (opposite_direction)
+        		if (distance <= distance_limit && point4_reached == false)
         		{
-        			f1_=point4_;
-        		}
-        		else
-        		{
-        			f1_=point2_;	
-        		}
-        		
-        		point1_reached = true;
-        		ROS_INFO("Point1 reached!");
-        	}
-        	else if (distance <= distance_limit && point1_reached == true && point2_reached == false)
-        	{
-        		f0_=point2_;
-        		if (opposite_direction)
-        		{
-        			f1_=point1_;
-        		}
-        		else
-        		{
+        			f0_=get_current_frame();
         			f1_=point3_;
+        			current_f1_name_ = "point3_";
+        			point4_reached = true;
+        			ROS_INFO("Point4 reached, opposite direction!");
         		}
-        		
-        		point2_reached = true;
-        		ROS_INFO("Point2 reached!");
-        	}
-        	else if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == false)
-        	{
-        		f0_=point3_;
-        		if (opposite_direction)
+        		else if (distance <= distance_limit && point4_reached == true && point3_reached == false)
         		{
+        			f0_=get_current_frame();
         			f1_=point2_;
+        			point3_reached = true;
+        			current_f1_name_ = "point2_";
+        			ROS_INFO("Point3 reached!, opposite direction");
         		}
-        		else
+        		else if (distance <= distance_limit && point4_reached == true && point3_reached == true && point2_reached == false)
         		{
-        			f1_=point4_;
-        		}
-        		
-        		point3_reached = true;
-        		ROS_INFO("Point3 reached!");
-        	}
-        	else if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == true && point4_reached == false)
-        	{
-        		f0_=point4_;
-        		if (opposite_direction)
-        		{
-        			f1_=point3_;
-        		}
-        		else
-        		{
+        			f0_=get_current_frame();
         			f1_=point1_;
+        			current_f1_name_ = "point1_";
+        			point2_reached = true;
+        			ROS_INFO("Point2 reached!, opposite direction");
         		}
-        		point1_reached = false;
-        		point2_reached = false;
-        		point3_reached = false;
-        		ROS_INFO("Point4 reached!");
-        		//return;
-        		// Jos haluaa että se päättyy tohon niin return tai sit jos haluaa että se toistaa samaa niin tossa vois varmaan muuttaa noi kaikki samaks kuin initissä eli alussa.	
+        		else if (distance <= distance_limit && point4_reached == true && point3_reached == true && point2_reached == true && point1_reached == false)
+        		{
+        			f0_=get_current_frame();
+        			f1_=point4_;
+        			current_f1_name_ = "point4_";
+        			point4_reached = false;
+        			point3_reached = false;
+        			point2_reached = false;
+        			ROS_INFO("Point4 reached, opposite direction!");
+        			//return;
+        			// Jos haluaa että se päättyy tohon niin return tai sit jos haluaa että se toistaa samaa niin tossa vois varmaan muuttaa noi kaikki samaks kuin initissä eli alussa.	
+        		}
         	}
-        	 	
+        	else
+        	{
+        		if (distance <= distance_limit && point1_reached == false)
+        		{
+        			f0_=get_current_frame();
+        			f1_=point2_;
+        			current_f1_name_ = "point2_";
+        			point1_reached = true;
+        			ROS_INFO("Point1 reached!");
+        		}
+        		else if (distance <= distance_limit && point1_reached == true && point2_reached == false)
+        		{
+        			f0_=get_current_frame();
+        			f1_=point3_;
+        			point2_reached = true;
+        			current_f1_name_ = "point3_";
+        			ROS_INFO("Point2 reached!");
+        		}
+        		else if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == false)
+        		{
+        			f0_=get_current_frame();
+        			f1_=point4_;
+        			current_f1_name_ = "point4_";
+        			point3_reached = true;
+        			ROS_INFO("Point3 reached!");
+        		}
+        		else if (distance <= distance_limit && point1_reached == true && point2_reached == true && point3_reached == true && point4_reached == false)
+        		{
+        			f0_=get_current_frame();
+        			f1_=point1_;
+        			current_f1_name_ = "point1_";
+        			point1_reached = false;
+        			point2_reached = false;
+        			point3_reached = false;
+        			ROS_INFO("Point4 reached!");
+        			//return;
+        			// Jos haluaa että se päättyy tohon niin return tai sit jos haluaa että se toistaa samaa niin tossa vois varmaan muuttaa noi kaikki samaks kuin initissä eli alussa.	
+        		}
+        	}
         }
+        		
         //Tota koodia vois vielä parannella paljonkin, esim voi vaan päivittää tyyliin points_reached++ ja verrata sitä aina number_of_pointsiin tms. Muutenkin tohon vois ehkä pistää jonkun for-silmukan.
         V0_ = diff(f0_, f1_)/target_time_;
         
@@ -883,6 +981,9 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     bool point4_reached;
     bool opposite_direction;
     int subs_count;
+    
+    //Tämä lähinnä siksi että framien vertailu == tai equal voi olla haastavaa
+    std::string current_f1_name_;
     
     std::vector<KDL::Frame> points_;
     
