@@ -284,10 +284,12 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         
         point3_.p(0) = point2_.p(0);
         point3_.p(1) = point2_.p(1);
-        point3_.p(2) = point2_.p(2)+0.15;
+        //point3_.p(2) = point2_.p(2)+0.15;
+        point3_.p(2) = point2_.p(2)+0.1;
         point3_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
         
-        point4_.p(0) = point3_.p(0)+0.2;
+        //point4_.p(0) = point3_.p(0)+0.2;
+        point4_.p(0) = point3_.p(0)+0.15;
         point4_.p(1) = point3_.p(1);
         point4_.p(2) = point3_.p(2);
         point4_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
@@ -411,6 +413,9 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
      		current_f1_name_ = "point3_";
      		point4_reached = true;
      		point3_reached = false;
+     		//testi:
+     		point2_reached = false;
+     		point1_reached = false;
      	}
      	else if (current_f1_name_ == "point3_")
      	{
@@ -420,6 +425,8 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
      		point4_reached = true; 
      		point3_reached = true;
      		point2_reached = false;
+     		//Testi:
+     		point1_reached = false;
      	}
      	else if (current_f1_name_ == "point2_")
      	{
@@ -446,7 +453,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
      	
      	
      }
-     else if (keyboard_msg->data == "original")
+     else
      {
      	opposite_direction = false;
      	ROS_INFO("Received original-direction-command!");
@@ -457,6 +464,9 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
      		current_f1_name_ = "point2_";
      		point1_reached = true;
      		point2_reached = false;
+     		//Testi:
+     		point3_reached = false;
+     		point4_reached = false;
      	}
      	else if (current_f1_name_ == "point2_")
      	{
@@ -465,7 +475,9 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
      		current_f1_name_ = "point3_";
      		point1_reached = true;
      		point2_reached = true;
-     		point3_reached = false;	
+     		point3_reached = false;
+     		//Testi:
+     		point4_reached = false;	
      	}
      	else if (current_f1_name_ == "point3_")
      	{
@@ -489,10 +501,6 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
      		point4_reached = false;
      	}
      	
-     }
-     else
-     {
-     	ROS_INFO("Unknown command, direction will remain as is!");
      }
      	
     }
@@ -685,18 +693,9 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         xd_temp_(4)=pitch;
         xd_temp_(5)=yaw;
         
-        //V_cmd_ = xd_ + Kp_.data.cwiseProduct(xerr_);
         V_cmd_ = xd_temp_ + Kp_.data.cwiseProduct(xerr_);
-        //Testi:
-        //V_cmd_ = xd_ + Kp_.data.cwiseProduct(xerr_);
         
-        //V_cmd_.data = Vd_.data+Kp_.data*xerr_;
-        
-        //Voi olla että tossa ei toimi suoraan * vaan Kp_.data.cwiseProduct(xerr_)
         q_dot_cmd_.data = J_.data.inverse()*V_cmd_; // which is sent to velocity controller
-        //q_dot_cmd_.data = J_.data.inverse().cwiseProduct(V_cmd_);
-        
-        
         
         e_dot_cmd_.data=q_dot_cmd_.data - qdot_.data;
 
@@ -706,14 +705,9 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         id_solver_->JntToGravity(q_, G_); 
 
         // *** 2.3 Apply Torque Command to Actuator ***
-        //aux_d_.data = M_.data * (qd_ddot_.data + Kp_.data.cwiseProduct(e_.data) + Kd_.data.cwiseProduct(e_dot_.data));
-        //comp_d_.data = C_.data + G_.data;
-        //tau_d_.data = aux_d_.data + comp_d_.data;
         
         //Own code for velocity controller (For velocity controller, K_p=0):
-        //aux_d_.data = M_.data * (qd_ddot_.data + Kd_.data.cwiseProduct(e_dot_.data));
         
-        //aux_d_.data = M_.data * (q_dotdot_cmd_+Kd_.data.cwiseProduct(e_dot_cmd_.data));
         //aux_d_.data = M_.data * (q_dotdot_cmd_.data + Kd_.data.cwiseProduct(e_dot_cmd_.data));
         aux_d_.data = M_.data * (Kd_.data.cwiseProduct(e_dot_cmd_.data));
         
