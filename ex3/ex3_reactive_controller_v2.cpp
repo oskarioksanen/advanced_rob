@@ -7,6 +7,8 @@
 #include <std_msgs/Float64MultiArray.h>
 #include <std_msgs/String.h>
 
+#include <Eigen/LU>
+
 #include <urdf/model.h>
 
 // from kdl packages
@@ -580,7 +582,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         			point4_reached = false;
         			point3_reached = false;
         			point2_reached = false;
-        			ROS_INFO("Point4 reached, opposite direction!");
+        			ROS_INFO("Point1 reached, opposite direction!");
         			//return;
         			// Jos haluaa että se päättyy tohon niin return tai sit jos haluaa että se toistaa samaa niin tossa vois varmaan muuttaa noi kaikki samaks kuin initissä eli alussa.	
         		}
@@ -697,7 +699,13 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         
         q_dot_cmd_.data = J_.data.inverse()*V_cmd_; // which is sent to velocity controller
         
+        //Test:
+        //V_feedback_=J_.data*qdot_.data;
+        //float det = J_.data.determinant();
+        
         e_dot_cmd_.data=q_dot_cmd_.data - qdot_.data;
+        //e_v_ = V_cmd_.data-V_feedback_.data;
+        //e_v_ = KDL::diff(V_cmd_.data,V_feedback_.data);
 
         // *** 2.2 Compute model(M,C,G) ***
         id_solver_->JntToMass(q_, M_);
@@ -709,6 +717,14 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         //Own code for velocity controller (For velocity controller, K_p=0):
         
         //aux_d_.data = M_.data * (q_dotdot_cmd_.data + Kd_.data.cwiseProduct(e_dot_cmd_.data));
+        /*if (det < 0.001)
+        {
+        	aux_d_.data = M_.data * (Kd_.data.cwiseProduct(e_v_.data));
+        }
+        else
+        {
+        	aux_d_.data = M_.data * (Kd_.data.cwiseProduct(e_dot_cmd_.data));
+        }*/
         aux_d_.data = M_.data * (Kd_.data.cwiseProduct(e_dot_cmd_.data));
         
         
@@ -940,6 +956,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     //Own code:
     KDL::JntArray q_dot_cmd_, q_dotdot_cmd_;
     KDL::JntArray e_dot_cmd_;
+    
     //boost::scoped_ptr<KDL::ChainFkSolverPos_recursive> fk_pos_solver_; //Solver to compute the forward kinematics (position)
     boost::scoped_ptr<KDL::ChainFkSolverPos_recursive> fk_pos_solver_;
     KDL::Frame xd_; // x.p: frame position(3x1), x.m: frame orientation (3x3)
@@ -975,6 +992,8 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     bool point4_reached;
     bool opposite_direction;
     int subs_count;
+    KDL::JntArray e_v_;
+    Eigen::Matrix<double, num_taskspace, 1> V_feedback_;
     
     //Tämä lähinnä siksi että framien vertailu == tai equal voi olla haastavaa
     std::string current_f1_name_;
