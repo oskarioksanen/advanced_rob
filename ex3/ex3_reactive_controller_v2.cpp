@@ -274,6 +274,8 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         
         //Testi:
         //Poista nämä sitten kun käyttää subscriberia. Testasin vaan ilman subscriberia.
+        
+        //Näillä toimi, kokeilen laittaa "vaikeammat" jotta näkee auttaako pseudo inverse
         point1_.p(0) = f0_.p(0);
         point1_.p(1) = f0_.p(1);
         point1_.p(2) = f0_.p(2)-0.2;
@@ -295,6 +297,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         point4_.p(1) = point3_.p(1);
         point4_.p(2) = point3_.p(2);
         point4_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
+        
         trajectory_received = true;
         f1_=point1_;
         current_f1_name_ = "point1_";
@@ -696,16 +699,24 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         xd_temp_(5)=yaw;
         
         V_cmd_ = xd_temp_ + Kp_.data.cwiseProduct(xerr_);
+        float det = J_.data.determinant();
+        if ((det >= 0 && det <= 0.01) || (det <= 0 && det >= -0.01))
+        {
+        	
+        	pseudo_inverse(J_.data,J_inv_,false);
+        	//ROS_INFO("Close to singularity, use pseudo inverse!");
+        	//ROS_INFO("Det here: %f", (double)det);
+        }
+        else
+        {
+        	J_inv_ = J_.data.inverse();
+        	//ROS_INFO("Not close to singularity, use basic inverse");
+        	//ROS_INFO("Det here: %f", (double)det);
+        }
         
-        q_dot_cmd_.data = J_.data.inverse()*V_cmd_; // which is sent to velocity controller
-        
-        //Test:
-        //V_feedback_=J_.data*qdot_.data;
-        //float det = J_.data.determinant();
+        q_dot_cmd_.data = J_inv_*V_cmd_; // which is sent to velocity controller
         
         e_dot_cmd_.data=q_dot_cmd_.data - qdot_.data;
-        //e_v_ = V_cmd_.data-V_feedback_.data;
-        //e_v_ = KDL::diff(V_cmd_.data,V_feedback_.data);
 
         // *** 2.2 Compute model(M,C,G) ***
         id_solver_->JntToMass(q_, M_);
@@ -717,17 +728,9 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         //Own code for velocity controller (For velocity controller, K_p=0):
         
         //aux_d_.data = M_.data * (q_dotdot_cmd_.data + Kd_.data.cwiseProduct(e_dot_cmd_.data));
-        /*if (det < 0.001)
-        {
-        	aux_d_.data = M_.data * (Kd_.data.cwiseProduct(e_v_.data));
-        }
-        else
-        {
-        	aux_d_.data = M_.data * (Kd_.data.cwiseProduct(e_dot_cmd_.data));
-        }*/
+        //Käytä pseudo-inverssiä
+
         aux_d_.data = M_.data * (Kd_.data.cwiseProduct(e_dot_cmd_.data));
-        
-        
         comp_d_.data = C_.data + G_.data;
         tau_d_.data = aux_d_.data + comp_d_.data;
 
@@ -994,6 +997,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     int subs_count;
     KDL::JntArray e_v_;
     Eigen::Matrix<double, num_taskspace, 1> V_feedback_;
+    Eigen::MatrixXd J_inv_;
     
     //Tämä lähinnä siksi että framien vertailu == tai equal voi olla haastavaa
     std::string current_f1_name_;
