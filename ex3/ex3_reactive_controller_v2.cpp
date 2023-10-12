@@ -301,6 +301,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         trajectory_received = true;
         f1_=point1_;
         current_f1_name_ = "point1_";
+        robot_stopped = false;
 
         return true;
     }
@@ -458,7 +459,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
      	
      	
      }
-     else
+     else if (keyboard_msg->data == "original")
      {
      	opposite_direction = false;
      	ROS_INFO("Received original-direction-command!");
@@ -507,6 +508,28 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
      	}
      	
      }
+     else if (keyboard_msg->data == "stop")
+     {
+     	ROS_INFO("Received stop-command!");
+     	f1_when_stopped_ = f1_;
+     	f1_name_when_stopped_ = current_f1_name_;
+     	f0_ = get_current_frame();
+     	//f1_ = f0_;
+     	robot_stopped = true;
+     }
+     else if (keyboard_msg->data == "continue")
+     {
+     	ROS_INFO("Received continue-command!");
+     	f1_= f1_when_stopped_;
+     	current_f1_name_ = f1_name_when_stopped_;
+     	f0_ = get_current_frame();
+     	robot_stopped = false;
+     }
+     else
+     {
+     	ROS_INFO("Unknown command!");
+     }
+     
      	
     }
 
@@ -545,7 +568,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
         distance = sqrt(pow(f1_.p(0)-x_.p(0),2)+pow(f1_.p(1)-x_.p(1),2)+pow(f1_.p(2)-x_.p(2),2));
         //ROS_INFO("Distance here: %f", distance);
         
-        if (!trajectory_received)
+        if ((!trajectory_received)||(robot_stopped))
         {
         	f1_=f0_;
         }
@@ -978,6 +1001,7 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     KDL::JntArray q_1_;
     KDL::Frame f0_;
     KDL::Frame f1_;
+    KDL::Frame f1_when_stopped_;
     KDL::Twist V0_;
     Eigen::Matrix<double, num_taskspace, 1> xd_temp_;
     KDL::JntArray q0_, qdot0_;
@@ -998,9 +1022,11 @@ class Reactive_Controller_V2 : public controller_interface::Controller<hardware_
     KDL::JntArray e_v_;
     Eigen::Matrix<double, num_taskspace, 1> V_feedback_;
     Eigen::MatrixXd J_inv_;
+    bool robot_stopped;
     
     //Tämä lähinnä siksi että framien vertailu == tai equal voi olla haastavaa
     std::string current_f1_name_;
+    std::string f1_name_when_stopped_;
     
     std::vector<KDL::Frame> points_;
     
