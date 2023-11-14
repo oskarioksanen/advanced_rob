@@ -230,7 +230,7 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
         q0_.data=Eigen::VectorXd::Zero(n_joints_);
         qdot0_.data = Eigen::VectorXd::Zero(n_joints_);
         q_1_.data=Eigen::VectorXd::Zero(n_joints_);
-        
+        x_tilde_.data = Eigen::VectorXd::Zero(n_joints_);
         
         f0_ = get_current_frame();
 
@@ -282,10 +282,16 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
         point1_.p(2) = f0_.p(2)-0.2;
         point1_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
         
+        T_od_.p(0) = -0.0037;
+        T_od_.p(1) = 0.0324;
+        T_od_.p(2) = 0.1463;
+        T_od_.M = KDL::Rotation(KDL::Rotation::Quaternion(0.9998, -0.0124, 0.0122, 0.0055));
+        
         trajectory_received = true;
         f1_=point1_;
         current_f1_name_ = "point1_";
         robot_stopped = false;
+        aruco_found = false;
 
         return true;
     }
@@ -313,21 +319,17 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
     }
     
     void aruco_transform_CB(const geometry_msgs::TransformStampedConstPtr &transform_msg)
-    {
-    	//Vai saisko näissä suoraan transformaatiomatriisin tai edes translation/rotation osat??
-    	//Täytyy tietysti tallentaa eri muuttujaan kuin tässä, tein vaan "pohjan" valmiiksi.
-    	//x=transform_msg->transform.translation.x;
-    	//y=transform_msg->transform.translation.y;
-    	//z=transform_msg->transform.translation.z;
-    	
+    {	
     	ROS_INFO("Päädytään aruco_transform_CB funktioon");
     	ROS_INFO("aruco_transform_CB x here: %f ", (double)transform_msg->transform.translation.x);
     	
+    	T_oc_.p(0) = transform_msg->transform.translation.x;
+        T_oc_.p(1) = transform_msg->transform.translation.y;
+        T_oc_.p(2) = transform_msg->transform.translation.z;
+        T_oc_.M = KDL::Rotation(KDL::Rotation::Quaternion(transform_msg->transform.rotation.x,transform_msg->transform.rotation.y , transform_msg->transform.rotation.z, transform_msg->transform.rotation.w));
+        aruco_found = true;
+    	
     	//Orientaatio quaternioneina, voi olla että tarvii muuttaa euler-kulmiksi
-    	//w=transform_msg->transform.rotation.w;
-    	//x=transform_msg->transform.rotation.x;
-    	//y=transform_msg->transform.rotation.y;
-    	//z=transform_msg->transform.rotation.z;
     }
     
     KDL::Frame get_current_frame()
@@ -477,10 +479,42 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
         id_solver_->JntToGravity(q_, G_); 
 
         // *** 2.3 Apply Torque Command to Actuator ***
-
-        aux_d_.data = M_.data * (Kd_.data.cwiseProduct(e_dot_cmd_.data));
-        comp_d_.data = C_.data + G_.data;
-        tau_d_.data = aux_d_.data + comp_d_.data;
+	
+	if (point1_reached && aruco_found)
+	{
+		//Gravity compensation+PD:
+		
+		//pseudo_inverse(T_oc_,T_oc_inv_,false);
+		T_cd_=T_od_*T_oc_.Inverse();
+		//Vai roll, pitch, yaw? Mistä tietää mitkä euler angelit halutaan?
+		
+		//double alfa, beta, gamma;
+		//T_cd_.M.GetEulerZYX(alfa, beta, gamma);
+		
+		double roll2, pitch2, yaw2;
+		T_cd_.M.GetRPY(roll2, pitch2, yaw2);
+		
+		x_tilde_(0)=-T_cd_.p(0);
+		x_tilde_(1)=-T_cd_.p(1);
+		x_tilde_(2)=-T_cd_.p(2);
+		
+		//x_tilde_(3)=-alfa;
+		//x_tilde_(4)=-beta;
+		//x_tilde_(5)=-gamma;
+		
+		x_tilde_(3)=-roll2;
+		x_tilde_(4)=-pitch2;
+		x_tilde_(5)=-yaw2;
+		tau_d_.data = G_.data+Kp_.data.cwiseProduct(x_tilde_.data)-Kd_.data.cwiseProduct(qdot_.data);
+		
+	}
+	else
+	{
+		aux_d_.data = M_.data * (Kd_.data.cwiseProduct(e_dot_cmd_.data));
+		comp_d_.data = C_.data + G_.data;
+		tau_d_.data = aux_d_.data + comp_d_.data;
+	}
+	
 
         for (int i = 0; i < n_joints_; i++)
         {
@@ -745,6 +779,14 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
     KDL::Frame point2_;
     KDL::Frame point3_;
     KDL::Frame point4_;
+    
+    KDL::Frame T_od_;
+    KDL::Frame T_oc_;
+    KDL::Frame T_cd_;
+    KDL::Frame T_oc_inv_;
+    KDL::JntArray x_tilde_;
+    bool aruco_found;
+    
     bool trajectory_received;
     double distance_limit;
     double distance;
