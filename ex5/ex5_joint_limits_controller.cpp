@@ -16,6 +16,7 @@
 
 #include <boost/scoped_ptr.hpp>
 #include <boost/lexical_cast.hpp>
+#include <math.h>
 
 #define PI 3.141592
 #define D2R PI / 180.0
@@ -254,6 +255,21 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
 
     KDL::JntArray getRepVelocity()
 	{
+		KDL::JntArray rep_velocities;
+		rep_velocities.data = Eigen::VectorXd::Zero(n_joints_);
+		k = 1;
+		q_star = 0.2;
+		
+		for (int i = 0; i < n_joints_; i++)
+		{
+			q_limit_dist = upper_limits_(i) - std::abs(q_(i));
+			
+			if (q_limit_dist <= q_star)
+			{
+				//1/2*k*(1/q_limit_dist-1/q_star)
+				F = -k*(1/q_limit_dist-1/q_star)*
+			}
+		}
 		
 	}
     void update(const ros::Time &time, const ros::Duration &period)
