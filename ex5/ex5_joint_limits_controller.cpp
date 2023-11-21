@@ -228,7 +228,12 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
         t = 0.0;
         ROS_INFO("Starting Computed Torque Controller");
     }
-
+	
+	KDL::JntArray getRepVelocity()
+	{
+		
+	}
+	
     void update(const ros::Time &time, const ros::Duration &period)
     {
         // ********* 0. Get states from gazebo *********
