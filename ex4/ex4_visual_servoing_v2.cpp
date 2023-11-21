@@ -45,6 +45,10 @@
 
 //Koitan tehdä sillee että "reactive controller" ohjaa siihen pisteeseen 1 asti (jotta saadaan robo järkevään asentoon ja paikkaan) ja siitä eteenpäin visual servoing.
 
+//Suunnissa mahdollisesti jotain outoa. Kun siirsin markeria gazebon z-suunnassa, markerin x pieneni. Kun siirretään x:n neg suuntaan, z kasvaa. Kun siirtää y:n positiiviseen, y pienenee.
+
+//Tällä hetkellä se on melko stabiili, mutta luulee löytävänsä markerin väärästä paikasta, eli todnäk väärä frame (tällä hetkellä ref_frame:=/elfin_end_link). Vois koittaa vaihtaa ref_framea tai laittaa ref_frameksi cameran frame (joku niistä?), tehdä funktio get_current_camera_frame (jossa siis lasketaan jnt_to_jac, mutta camera_frameen "asti") ja koittaa sillä.  
+
 namespace arm_controllers
 {
 class VisualServoingController_V2 : public controller_interface::Controller<hardware_interface::EffortJointInterface>
@@ -79,6 +83,9 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
         // 1.2.1 Joint Controller
         Kp_.resize(n_joints_);
         Kd_.resize(n_joints_);
+        Kd_gravity.resize(n_joints_);
+        Kp_gravity.resize(n_joints_);
+        
         Ki_.resize(n_joints_);
 
         std::vector<double> Kp(n_joints_), Ki(n_joints_), Kd(n_joints_);
@@ -89,9 +96,22 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
             {
                 Kp_(i) = Kp[i];
             }
+            
             else
             {
                 std::cout << "/elfin/VisualServoingController_V2/gains/elfin_joint" + si + "/pid/p" << std::endl;
+                ROS_ERROR("Cannot find pid/p gain");
+                return false;
+            }
+            
+            if (n.getParam("/elfin/VisualServoingController_V2/gains_gravity/elfin_joint" + si + "/pid/p", Kp[i]))
+            {
+                Kp_gravity(i) = Kp[i];
+            }
+            
+            else
+            {
+                std::cout << "/elfin/VisualServoingController_V2/gains_gravity/elfin_joint" + si + "/pid/p" << std::endl;
                 ROS_ERROR("Cannot find pid/p gain");
                 return false;
             }
@@ -113,6 +133,15 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
             else
             {
                 ROS_ERROR("Cannot find pid/d gain");
+                return false;
+            }
+            if (n.getParam("/elfin/VisualServoingController_V2/gains_gravity/elfin_joint" + si + "/pid/d", Kd[i]))
+            {
+                Kd_gravity(i) = Kd[i];
+            }
+            else
+            {
+                ROS_ERROR("Cannot find pid/d gravity gain");
                 return false;
             }
         }
@@ -267,7 +296,7 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
         // 6.2 subsriber
         //sub_x_cmd_ = n.subscribe<std_msgs::Float64MultiArray>("/trajectory_topic", 1, &Reactive_Controller_V2::commandCB, this);
         
-        aruco_pose_subscriber_ = n.subscribe<geometry_msgs::PoseStamped>("/aruco_single/pose", 1, &VisualServoingController_V2::aruco_pose_CB, this);
+        //aruco_pose_subscriber_ = n.subscribe<geometry_msgs::PoseStamped>("/aruco_single/pose", 1, &VisualServoingController_V2::aruco_pose_CB, this);
         aruco_transform_subscriber_ = n.subscribe<geometry_msgs::TransformStamped>("/aruco_single/transform", 1, &VisualServoingController_V2::aruco_transform_CB, this);
         
         ROS_INFO("Päästään initin loppuun");
@@ -282,10 +311,7 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
         point1_.p(2) = f0_.p(2)-0.2;
         point1_.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
         
-        T_od_.p(0) = -0.0037;
-        T_od_.p(1) = 0.0324;
-        T_od_.p(2) = 0.1463;
-        T_od_.M = KDL::Rotation(KDL::Rotation::Quaternion(0.9998, -0.0124, 0.0122, 0.0055));
+        //Koitetaan "korjata" suuntia, koska vaikuttaisi gazebon perusteella että markerin framen x-suunta on basen y-suunta ja markerin y on basen (negatiivinen) x.
         
         trajectory_received = true;
         f1_=point1_;
@@ -301,35 +327,45 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
     }
     
     void aruco_pose_CB(const geometry_msgs::PoseStampedConstPtr &pose_msg)
-    {
-    	//Onko nämä desired-arvoja?? Täytyy tietysti tallentaa eri muuttujaan kuin tässä, tein vaan "pohjan" valmiiksi.
-    	//x=pose_msg->pose.position.x;
-    	//y=pose_msg->pose.position.y;
-    	//z=pose_msg->pose.position.z;
-    	
-    	ROS_INFO("Päädytään aruco_pose_CB funktioon");
-    	ROS_INFO("aruco_pose_CB x here: %f ", (double)pose_msg->pose.position.x);
-    	
-    	//Orientaatio quaternioneina, voi olla että tarvii muuttaa euler-kulmiksi
-    	//w=pose_msg->pose.orientation.w;
-    	//x_orient=pose_msg->pose.orientation.x;
-    	//y_orient=pose_msg->pose.orientation.y;
-    	//z_orient=pose_msg->pose.orientation.z;
-    	
+    {	
     }
     
     void aruco_transform_CB(const geometry_msgs::TransformStampedConstPtr &transform_msg)
-    {	
-    	ROS_INFO("Päädytään aruco_transform_CB funktioon");
-    	ROS_INFO("aruco_transform_CB x here: %f ", (double)transform_msg->transform.translation.x);
+    {
+    	//Nämä kun ref_frame:=/elfin_link6
+    	//Kun markeria tuo lähemmäs kameraa, aruco_position_z pienenee. Kun vie kauemmas, se kasvaa. (gazebon markerin x:n pos, robotin y:n pos ->aruco_pos -z) 
+    	//Kun markeria vie kamerasta katottuna oikealle, aruco_position_y pienenee. Kun vie vasemmalle, se kasvaa. (gazebon markerin y+ (tai robotin x:n neg) ->aruco position -y
+    	//Kun markeria nostaa kamerasta katottuna ylöspäin, aruco_position_x pienenee. Kun sitä laskee, se kasvaa. (eli gazebon z+ -> -marker_x)
+    	//Kun gazebon mukaan markerin pose on x=0, y=-0.5, z=0.7 roll=0, pitch=0 yaw=1.57, niin markerin pose noin 
+    	// x=0.0182, y=-0.0665, z=0.3799, orientaatio x=-0.698, y=0.7159, z=-0.007, w=-0.012
+    	//Samalla robotin sijainti (x_=−0,000369, y=0,002107, z=0,698121, roll=−0,011044, pitch=−0,025154, yaw=−0,015337	
     	
-    	T_oc_.p(0) = transform_msg->transform.translation.x;
-        T_oc_.p(1) = transform_msg->transform.translation.y;
-        T_oc_.p(2) = transform_msg->transform.translation.z;
-        T_oc_.M = KDL::Rotation(KDL::Rotation::Quaternion(transform_msg->transform.rotation.x,transform_msg->transform.rotation.y , transform_msg->transform.rotation.z, transform_msg->transform.rotation.w));
-        aruco_found = true;
-    	
-    	//Orientaatio quaternioneina, voi olla että tarvii muuttaa euler-kulmiksi
+    	if (subs_count == 0)
+    	{      	
+        	subs_count+=1;
+        	f0_=get_current_frame();
+        	double y_offset = 0.05;
+        	double x_offset = 0.05;
+        	
+        	//Koitetaan ottaa elfin_end_linkin suhteen, jolloin:
+        	f1_.p(0) = f0_.p(0)-transform_msg->transform.translation.y-x_offset;
+        	f1_.p(1) = f0_.p(1)-transform_msg->transform.translation.z+y_offset;
+        	f1_.p(2) = f0_.p(2)-transform_msg->transform.translation.x;
+        	
+        	double msg_roll, msg_pitch, msg_yaw;
+		KDL::Rotation::Quaternion(transform_msg->transform.rotation.x,transform_msg->transform.rotation.y , transform_msg->transform.rotation.z, transform_msg->transform.rotation.w).GetRPY(msg_roll, msg_pitch, msg_yaw);
+		
+		//double f0_roll, f0_pitch, f0_yaw;
+        	//f0_.M.GetRPY(f0_roll, f0_pitch, f0_yaw);
+		f1_.M = KDL::Rotation(KDL::Rotation::RPY(0,0,0));
+        	
+        	aruco_found = true;
+        	
+        	ROS_INFO("Päädytään aruco_transform_CB funktioon, subs_count==0");
+        	ROS_INFO(" F_1 here: : %f %f %f ", (double)f1_.p(0), (double)f1_.p(1), (double)f1_.p(2));
+        	ROS_INFO(" F_0 here: : %f %f %f ", (double)f0_.p(0), (double)f0_.p(1), (double)f0_.p(2));
+        	
+    	}
     }
     
     KDL::Frame get_current_frame()
@@ -385,9 +421,21 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
         distance = sqrt(pow(f1_.p(0)-x_.p(0),2)+pow(f1_.p(1)-x_.p(1),2)+pow(f1_.p(2)-x_.p(2),2));
         //ROS_INFO("Distance here: %f", distance);
         
-        if (point1_reached)
+        if (aruco_found && point1_reached)
         {
-        	//En oo ihan varma tästä. Voi olla että tähän täytyy lisätä joku "and !visual_servoing_input", jotta tää ei pakota roboa paikalleen sitten kun pitäs alkaa käyttään visual servoing controlleria.
+        	
+        	if (distance <= distance_limit)
+        	{
+        		f0_=get_current_frame();
+        		f1_=f0_;
+        		ROS_INFO("Marker reached!");
+        		aruco_found=false;
+        		subs_count=0;
+        	}
+        	
+        }
+        else if (point1_reached && !aruco_found)
+        {
         	f1_=f0_;
         }
         else
@@ -396,7 +444,7 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
         	if (distance <= distance_limit && point1_reached == false)
         	{
         		f0_=get_current_frame();
-        		f1_=point2_;
+        		//f1_=point2_;
         		current_f1_name_ = "point2_";
         		point1_reached = true;
         		ROS_INFO("Point1 reached!");
@@ -404,6 +452,7 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
         }
         		
         V0_ = diff(f0_, f1_)/target_time_;
+        
         if (round==1)
         {
         	own_dt=(now-start_time).toSec();
@@ -419,7 +468,7 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
         	tau_k=tau_old+own_dt*v_tau;
         	tau_old=tau_k;
         	xd_=KDL::addDelta(xd_,V0_,own_dt);
-        }
+        	}
         if (tau_k >= 1)
         {
         	tau_k = 1;
@@ -433,6 +482,7 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
         
         
         // 1. Error as X_err=diff(T_e,T_d):
+
         xerr_temp_ = diff(x_, xd_,1);
         
         //2. Error as 𝑋𝑒𝑟𝑟 = [diff(𝑅𝑒, 𝑅𝑑), diff(𝑝𝑒, 𝑝𝑑)]:
@@ -480,40 +530,10 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
 
         // *** 2.3 Apply Torque Command to Actuator ***
 	
-	if (point1_reached && aruco_found)
-	{
-		//Gravity compensation+PD:
-		
-		//pseudo_inverse(T_oc_,T_oc_inv_,false);
-		T_cd_=T_od_*T_oc_.Inverse();
-		//Vai roll, pitch, yaw? Mistä tietää mitkä euler angelit halutaan?
-		
-		//double alfa, beta, gamma;
-		//T_cd_.M.GetEulerZYX(alfa, beta, gamma);
-		
-		double roll2, pitch2, yaw2;
-		T_cd_.M.GetRPY(roll2, pitch2, yaw2);
-		
-		x_tilde_(0)=-T_cd_.p(0);
-		x_tilde_(1)=-T_cd_.p(1);
-		x_tilde_(2)=-T_cd_.p(2);
-		
-		//x_tilde_(3)=-alfa;
-		//x_tilde_(4)=-beta;
-		//x_tilde_(5)=-gamma;
-		
-		x_tilde_(3)=-roll2;
-		x_tilde_(4)=-pitch2;
-		x_tilde_(5)=-yaw2;
-		tau_d_.data = G_.data+Kp_.data.cwiseProduct(x_tilde_.data)-Kd_.data.cwiseProduct(qdot_.data);
-		
-	}
-	else
-	{
-		aux_d_.data = M_.data * (Kd_.data.cwiseProduct(e_dot_cmd_.data));
-		comp_d_.data = C_.data + G_.data;
-		tau_d_.data = aux_d_.data + comp_d_.data;
-	}
+	aux_d_.data = M_.data * (Kd_.data.cwiseProduct(e_dot_cmd_.data));
+	comp_d_.data = C_.data + G_.data;
+	tau_d_.data = aux_d_.data + comp_d_.data;
+	
 	
 
         for (int i = 0; i < n_joints_; i++)
@@ -784,6 +804,8 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
     KDL::Frame T_oc_;
     KDL::Frame T_cd_;
     KDL::Frame T_oc_inv_;
+    KDL::Frame T_desired_;
+    KDL::Frame T_current_;
     KDL::JntArray x_tilde_;
     bool aruco_found;
     
@@ -817,7 +839,7 @@ class VisualServoingController_V2 : public controller_interface::Controller<hard
     KDL::JntArray tau_d_;
 
     // gains
-    KDL::JntArray Kp_, Ki_, Kd_;
+    KDL::JntArray Kp_, Ki_, Kd_, Kd_gravity, Kp_gravity;
 
     // save the data
     double SaveData_[SaveDataMax];
