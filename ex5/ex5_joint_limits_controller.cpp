@@ -57,6 +57,10 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
         Kp_.resize(n_joints_);
         Kd_.resize(n_joints_);
         Ki_.resize(n_joints_);
+        
+        lower_limits_.resize(n_joints_);
+        upper_limits_.resize(n_joints_);
+        
 
         std::vector<double> Kp(n_joints_), Ki(n_joints_), Kd(n_joints_);
         for (size_t i = 0; i < n_joints_; i++)
@@ -188,6 +192,9 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
         qd_dot_.data = Eigen::VectorXd::Zero(n_joints_);
         qd_ddot_.data = Eigen::VectorXd::Zero(n_joints_);
         qd_old_.data = Eigen::VectorXd::Zero(n_joints_);
+        
+        lower_limits_.data = Eigen::VectorXd::Zero(n_joints_);
+        upper_limits_.data = Eigen::VectorXd::Zero(n_joints_);
 
         q_.data = Eigen::VectorXd::Zero(n_joints_);
         qdot_.data = Eigen::VectorXd::Zero(n_joints_);
@@ -210,6 +217,21 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
         pub_SaveData_ = n.advertise<std_msgs::Float64MultiArray>("SaveData", 1000); // 뒤에 숫자는?
 
         // 6.2 subsriber
+        
+        lower_limits_(0)=-3.14;
+        upper_limits_(0)=3.14;
+        lower_limits_(1)=-2.35;
+        upper_limits_(1)=2.35;
+        lower_limits_(2)=-2.61;
+        upper_limits_(2)=2.61;
+        lower_limits_(3)=-3.14;
+        upper_limits_(3)=3.14;
+        lower_limits_(4)=-2.56;
+        upper_limits_(4)=2.56;
+        lower_limits_(5)=-3.14;
+        upper_limits_(5)=3.14;
+        
+        
 
         return true;
     }
@@ -228,12 +250,12 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
         t = 0.0;
         ROS_INFO("Starting Computed Torque Controller");
     }
-	
-	KDL::JntArray getRepVelocity()
+
+
+    KDL::JntArray getRepVelocity()
 	{
 		
 	}
-	
     void update(const ros::Time &time, const ros::Duration &period)
     {
         // ********* 0. Get states from gazebo *********
@@ -473,6 +495,8 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
 
     // gains
     KDL::JntArray Kp_, Ki_, Kd_;
+    
+    KDL::JntArray lower_limits_, upper_limits_;
 
     // save the data
     double SaveData_[SaveDataMax];
