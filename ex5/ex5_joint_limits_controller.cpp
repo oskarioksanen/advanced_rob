@@ -257,19 +257,26 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
 	{
 		KDL::JntArray rep_velocities;
 		rep_velocities.data = Eigen::VectorXd::Zero(n_joints_);
-		k = 1;
-		q_star = 0.2;
+		int k = 1;
+		double q_star = 0.2;
+		double F;
 		
 		for (int i = 0; i < n_joints_; i++)
 		{
-			q_limit_dist = upper_limits_(i) - std::abs(q_(i));
+			double q_limit_dist = upper_limits_(i) - std::abs(q_(i));
 			
 			if (q_limit_dist <= q_star)
 			{
 				//1/2*k*(1/q_limit_dist-1/q_star)
-				F = -k*(1/q_limit_dist-1/q_star)*
+				F = -k*(1/q_limit_dist-1/q_star)*1/(pow(q_limit_dist, 2));
 			}
+			else
+			{
+				F = 0;
+			}
+			rep_velocities(i) = F;
 		}
+		return rep_velocities;
 		
 	}
     void update(const ros::Time &time, const ros::Duration &period)
@@ -297,8 +304,9 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
 
         // ********* 2. Motion Controller in Joint Space*********
         // *** 2.1 Error Definition in Joint Space ***
+        KDL::JntArray q_rep = getRepVelocity();
         e_.data = qd_.data - q_.data;
-        e_dot_.data = qd_dot_.data - qdot_.data;
+        e_dot_.data = qd_dot_.data - (qdot_.data+q_rep.data);
         e_int_.data = qd_.data - q_.data; // (To do: e_int 업데이트 필요요)
 
         // *** 2.2 Compute model(M,C,G) ***
