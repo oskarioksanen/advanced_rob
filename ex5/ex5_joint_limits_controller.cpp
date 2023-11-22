@@ -194,6 +194,10 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
         qd_ddot_.data = Eigen::VectorXd::Zero(n_joints_);
         qd_old_.data = Eigen::VectorXd::Zero(n_joints_);
         
+        q_dot_cmd_.data = Eigen::VectorXd::Zero(n_joints_);
+        q_dotdot_cmd_.data = Eigen::VectorXd::Zero(n_joints_);
+        e_dot_cmd_.data = Eigen::VectorXd::Zero(n_joints_);
+        
         lower_limits_.data = Eigen::VectorXd::Zero(n_joints_);
         upper_limits_.data = Eigen::VectorXd::Zero(n_joints_);
 
@@ -258,14 +262,25 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
 		KDL::JntArray rep_velocities;
 		rep_velocities.data = Eigen::VectorXd::Zero(n_joints_);
 		int k = 1;
-		double q_star = 0.2;
+		double q_star = 0.4;
 		double F;
+		double q_limit_dist;
 		
 		for (int i = 0; i < n_joints_; i++)
 		{
-			double q_limit_dist = upper_limits_(i) - std::abs(q_(i));
+			if (std::abs(q_(i)) > upper_limits_(i))
+			{
+				q_limit_dist = 0.001;
+			}
+			else
+			{
+				q_limit_dist = upper_limits_(i) - std::abs(q_(i));
+			}
+
 			
-			if (q_limit_dist <= q_star)
+			ROS_INFO("q_limit_dist %f", q_limit_dist);
+			
+			if (q_limit_dist <= q_star && q_limit_dist > 0)
 			{
 				//1/2*k*(1/q_limit_dist-1/q_star)
 				F = -k*(1/q_limit_dist-1/q_star)*1/(pow(q_limit_dist, 2));
@@ -274,8 +289,10 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
 			{
 				F = 0;
 			}
+			//ROS_INFO("F: %f", F);
 			rep_velocities(i) = F;
 		}
+		ROS_INFO(" ");
 		return rep_velocities;
 		
 	}
@@ -297,9 +314,38 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
 
         for (size_t i = 0; i < n_joints_; i++)
         {
-            qd_ddot_(i) = -M_PI * M_PI / 4 * 45 * KDL::deg2rad * sin(M_PI / 2 * t); 
-            qd_dot_(i) = M_PI / 2 * 45 * KDL::deg2rad * cos(M_PI / 2 * t);          
-            qd_(i) = 45 * KDL::deg2rad * sin(M_PI / 2* t);
+            //qd_ddot_(i) = -M_PI * M_PI / 4 * 45 * KDL::deg2rad * sin(M_PI / 2 * t); 
+            //qd_dot_(i) = M_PI / 2 * 45 * KDL::deg2rad * cos(M_PI / 2 * t);          
+            //qd_(i) = 45 * KDL::deg2rad * sin(M_PI / 2* t);
+            if (stay_still == true)
+            {
+            	qd_ddot_(i) = 0;
+            	qd_dot_(i) = 0;
+            	qd_(i) = 0;
+            }
+            else
+            {
+            	//ROS_INFO("Stay still %d", stay_still);
+            	if (i == 0)
+            	{
+            		qd_ddot_(i) = 10;
+            		qd_dot_(i) = 10;
+            		qd_(i) = upper_limits_(0);
+            	}
+            	else
+            	{
+            		qd_ddot_(i) = 0;
+		        	qd_dot_(i) = 0;
+		        	qd_(i) = 0;
+            	}
+            	//ROS_INFO("Joint q %f", qd_(i));
+            	//ROS_INFO("Joint qdot %f", qd_dot_(i));
+            	//ROS_INFO("Joint qddot %f", qd_ddot_(i));
+            }
+            
+            //Own code:
+            //q_dot_cmd_(i) = qd_dot_(i)+Kp_(i)*(qd_(i) - q_(i));
+            //q_dotdot_cmd_(i) = qd_ddot_(i)+Kp_(i)*(qd_dot_(i) - qdot_(i));
         }
 
         // ********* 2. Motion Controller in Joint Space*********
@@ -308,6 +354,7 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
         e_.data = qd_.data - q_.data;
         e_dot_.data = qd_dot_.data - (qdot_.data+q_rep.data);
         e_int_.data = qd_.data - q_.data; // (To do: e_int 업데이트 필요요)
+        //e_dot_cmd_.data=q_dot_cmd_.data - qdot_.data;
 
         // *** 2.2 Compute model(M,C,G) ***
         id_solver_->JntToMass(q_, M_);
@@ -486,6 +533,7 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
   private:
     // others
     double t;
+    bool stay_still = false;
 
     //Joint handles
     unsigned int n_joints_;                               // joint 숫자
@@ -511,6 +559,9 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
     KDL::JntArray qd_old_;
     KDL::JntArray q_, qdot_;
     KDL::JntArray e_, e_dot_, e_int_;
+    
+    KDL::JntArray q_dot_cmd_, q_dotdot_cmd_;
+    KDL::JntArray e_dot_cmd_;
 
     // Input
     KDL::JntArray aux_d_;
