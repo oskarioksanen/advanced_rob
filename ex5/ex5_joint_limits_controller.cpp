@@ -262,34 +262,50 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
 		KDL::JntArray rep_velocities;
 		rep_velocities.data = Eigen::VectorXd::Zero(n_joints_);
 		int k = 1;
-		double q_star = 0.4;
+		double q_star = 1;
 		double F;
 		double q_limit_dist;
 		
 		for (int i = 0; i < n_joints_; i++)
 		{
-			if (std::abs(q_(i)) > upper_limits_(i))
-			{
-				q_limit_dist = 0.001;
-			}
-			else
-			{
-				q_limit_dist = upper_limits_(i) - std::abs(q_(i));
-			}
-
+			q_limit_dist = upper_limits_(i) - std::abs(q_(i));
 			
-			ROS_INFO("q_limit_dist %f", q_limit_dist);
+			if (i==1)
+			{
+				ROS_INFO("q_(1) here:  %f", q_(1));
+				ROS_INFO("i==1, q_limit_dist %f", q_limit_dist);
+			}
 			
 			if (q_limit_dist <= q_star && q_limit_dist > 0)
 			{
 				//1/2*k*(1/q_limit_dist-1/q_star)
-				F = -k*(1/q_limit_dist-1/q_star)*1/(pow(q_limit_dist, 2));
+				if (q_(i) < 0)
+				{
+					ROS_INFO("q_(i)<0 and q_limit_dist <= q_star, F!=0, q_limit_dist here: %f", q_limit_dist);
+					F = -k*(1/q_limit_dist-1/q_star)*1/(pow(q_limit_dist, 2));
+				}
+				else
+				{
+					
+					//ROS_INFO("q_(i)>0 and q_limit_dist <= q_star, F!=0, q_limit_dist here: %f", q_limit_dist);
+					F = k*(1/q_limit_dist-1/q_star)*1/(pow(q_limit_dist, 2));
+					if(i==1)
+					{
+						ROS_INFO("Close to max limit, start fighting back!");
+						ROS_INFO("q_(1) >0, F here:  %f", F);
+					}
+				}
+				//F = -k*(1/q_limit_dist-1/q_star)*1/(pow(q_limit_dist, 2));
 			}
 			else
 			{
 				F = 0;
+				if(i==1)
+				{
+					ROS_INFO("F should be 0: %f", F);
+				}
 			}
-			//ROS_INFO("F: %f", F);
+			ROS_INFO("F: %f", F);
 			rep_velocities(i) = F;
 		}
 		ROS_INFO(" ");
@@ -311,13 +327,29 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
         }
 
         // ********* 1. Desired Trajecoty in Joint Space *********
-
+	
+	KDL::JntArray q_rep = getRepVelocity();
         for (size_t i = 0; i < n_joints_; i++)
         {
             //qd_ddot_(i) = -M_PI * M_PI / 4 * 45 * KDL::deg2rad * sin(M_PI / 2 * t); 
             //qd_dot_(i) = M_PI / 2 * 45 * KDL::deg2rad * cos(M_PI / 2 * t);          
             //qd_(i) = 45 * KDL::deg2rad * sin(M_PI / 2* t);
-            if (stay_still == true)
+            
+            if (i == 1)
+            {
+            	qd_ddot_(i) = 0.1;
+            	qd_dot_(i) = 0.1;
+            	//qd_(i) = upper_limits_(0);
+            }
+            else
+            {
+            	qd_ddot_(i) = 0;
+		qd_dot_(i) = 0;
+		qd_(i) = 0;
+            }
+            
+            
+            /*if (stay_still == true)
             {
             	qd_ddot_(i) = 0;
             	qd_dot_(i) = 0;
@@ -335,26 +367,32 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
             	else
             	{
             		qd_ddot_(i) = 0;
-		        	qd_dot_(i) = 0;
-		        	qd_(i) = 0;
+		        qd_dot_(i) = 0;
+		        qd_(i) = 0;
             	}
             	//ROS_INFO("Joint q %f", qd_(i));
             	//ROS_INFO("Joint qdot %f", qd_dot_(i));
             	//ROS_INFO("Joint qddot %f", qd_ddot_(i));
-            }
+            }*/
             
             //Own code:
             //q_dot_cmd_(i) = qd_dot_(i)+Kp_(i)*(qd_(i) - q_(i));
             //q_dotdot_cmd_(i) = qd_ddot_(i)+Kp_(i)*(qd_dot_(i) - qdot_(i));
+            
+            //q_dot_cmd_(i) = qd_dot_(i)+Kp_(i)*(qd_(i) - q_(i))+q_rep(i);
+            //q_dotdot_cmd_(i) = qd_ddot_(i)+Kp_(i)*(qd_dot_(i) - qdot_(i));
+            
         }
 
         // ********* 2. Motion Controller in Joint Space*********
         // *** 2.1 Error Definition in Joint Space ***
-        KDL::JntArray q_rep = getRepVelocity();
+        //KDL::JntArray q_rep = getRepVelocity();
         e_.data = qd_.data - q_.data;
         e_dot_.data = qd_dot_.data - (qdot_.data+q_rep.data);
         e_int_.data = qd_.data - q_.data; // (To do: e_int 업데이트 필요요)
         //e_dot_cmd_.data=q_dot_cmd_.data - qdot_.data;
+        
+        e_dot_cmd_.data=q_dot_cmd_.data - qdot_.data;
 
         // *** 2.2 Compute model(M,C,G) ***
         id_solver_->JntToMass(q_, M_);
@@ -368,6 +406,9 @@ class JointLimitsController : public controller_interface::Controller<hardware_i
         
         //Own code for velocity controller (For velocity controller, K_p=0):
         aux_d_.data = M_.data * (qd_ddot_.data + Kd_.data.cwiseProduct(e_dot_.data));
+        
+        //aux_d_.data = M_.data * (q_dotdot_cmd_.data + Kd_.data.cwiseProduct(e_dot_cmd_.data));
+        
         comp_d_.data = C_.data + G_.data;
         tau_d_.data = aux_d_.data + comp_d_.data;
 
