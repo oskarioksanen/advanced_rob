@@ -1,0 +1,30 @@
+<launch>
+  <!-- World -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch"/>
+  
+  <!-- Robot Model -->
+  <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find elfin_description)/urdf/elfin3.urdf.xacro'" />
+      
+  <node name="urdf_spawner1" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen" args="-urdf -model elfin3 -param robot_description -J elfin_joint1 -0.05 -J elfin_joint2 -0.88 -J elfin_joint3 -2.13 -J elfin_joint4 -1.50 -J elfin_joint5 1.60 -J elfin_joint6 1.88"/>
+
+	<!-- Workpiece Model -->
+  	<group ns="own_wall">
+    	<param name="robot_description" command="$(find xacro)/xacro --inorder '$(find elfin_description)/urdf/own_wall.urdf.xacro'" />
+      
+    	<node name="urdf_spawner2" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen" args="-urdf -model own_wall -param robot_description"/> 
+  </group>
+  
+  <!-- Controller: 
+      - gravity_comp_controller
+      - computed_torque_controller
+      - passivity_controller
+      - time_delay_controller
+      - computed_torque_clik_controller -->
+  <rosparam file="$(find elfin_gazebo)/config/$(arg controller).yaml" command="load"/>
+
+  <node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false"
+      output="screen" ns="/elfin" args="joint_state_controller $(arg controller)"/>
+
+  <!-- State publisher -->
+  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" ns="/elfin"/>
+</launch>
