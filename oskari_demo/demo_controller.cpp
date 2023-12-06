@@ -224,12 +224,7 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         e_dot_.data = Eigen::VectorXd::Zero(n_joints_);
         e_int_.data = Eigen::VectorXd::Zero(n_joints_);
 
-        q0_.data=Eigen::VectorXd::Zero(n_joints_);
-        qdot0_.data = Eigen::VectorXd::Zero(n_joints_);
-        qdotdot0_.data = Eigen::VectorXd::Zero(n_joints_);
         q1_.data=Eigen::VectorXd::Zero(n_joints_);
-
-        f0_ = get_current_frame();
 
         // 5.2 Matrix 초기화 (사이즈 정의 및 값 0)
         M_.resize(kdl_chain_.getNrOfJoints());
@@ -246,8 +241,6 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 
         pub_SaveData_ = n.advertise<std_msgs::Float64MultiArray>("SaveData", 1000); // 뒤에 숫자는?
 
-        // 6.2 subsriber
-        
         lower_limits_(0)=-3.14;
         upper_limits_(0)=3.14;
         lower_limits_(1)=-2.35;
@@ -262,7 +255,9 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         upper_limits_(5)=3.14;
         
         target_time = 5;
-        update_round = 1;
+        update_round = 0;
+        distance_to_target_limit = 0.01;
+        start_time = ros::Time::now();
 
         return true;
     }
@@ -279,6 +274,14 @@ class DemoController : public controller_interface::Controller<hardware_interfac
     void starting(const ros::Time &time)
     {
         t = 0.0;
+        p_init_ = get_current_frame();
+        init_p_reached = true;
+        double init_roll, init_pitch, init_yaw;
+        p_init_.M.GetRPY(init_roll, init_pitch, init_yaw);
+        p_demo_start_.p(0) = p_init_.p(0);
+        p_demo_start_.p(1) = p_init_.p(1);
+        p_demo_start_.p(2) = p_init_.p(2)-0.2;
+        p_demo_start_.M = KDL::Rotation(KDL::Rotation::RPY(init_roll, init_pitch, init_yaw));
         ROS_INFO("Starting Demo Controller");
     }
 
@@ -288,7 +291,7 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 		KDL::JntArray rep_velocities;
 		rep_velocities.data = Eigen::VectorXd::Zero(n_joints_);
 		int k = 1;
-		double q_star = 1;
+		double q_star = 0.5;
 		double F;
 		double q_limit_dist;
 		
@@ -339,31 +342,49 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 
 	KDL::Frame get_current_frame()
 	{
+        KDL::JntArray q_curr, qdot_curr;
+        q_curr.data=Eigen::VectorXd::Zero(n_joints_);
+        qdot_curr.data = Eigen::VectorXd::Zero(n_joints_);
+
 	    KDL::Frame frame_to_return;
         for (int i = 0; i < n_joints_; i++)
         {
-            q0_(i) = joints_[i].getPosition();
+            q_curr(i) = joints_[i].getPosition();
         }
-
-        fk_pos_solver_->JntToCart(q0_, frame_to_return);
+        fk_pos_solver_->JntToCart(q_curr, frame_to_return);
         return frame_to_return;
 	}
 
-    void printFrame(KDL::Frame frame)
+    void printFrame(KDL::Frame frame, const std::string& frame_name = "empty")
     {
-        printf("Frame\n");
-        for(int i = 0; i < n_joints_; i++)
+        printf("\n------------------Frame------------------\n");
+        if (frame_name.compare("empty") != 0)
         {
-            for (int j = 0; j < n_joints_; j++)
-            {
-                double coord = frame(i, j);
-                printf("%f \t", coord);
-            }
-            printf("\n");
+            std::cout << frame_name << std::endl;
         }
-        printf("\n");
-        printf("---------------------------------");
-        printf("\n");
+        printf("Position:\n");
+        printf("[");
+        printf("%f, ", frame.p(0));
+        printf("%f, ", frame.p(1));
+        printf("%f]\n", frame.p(2));
+        printf("Orientation:\n");
+        for(int i = 0; i < 9; i++)
+        {
+            if (i == 0 || i == 3 || i == 6)
+            {
+                printf("[%f\t", frame.M.data[i]);
+            }
+            else if (i == 1 || i == 4 || i == 7)
+            {
+                printf("%f\t", frame.M.data[i]);
+            }
+
+            if (i == 2 || i == 5 || i == 8)
+            {
+                printf("%f]\n", frame.M.data[i]);
+            }
+        }
+        printf("\n\n");
     }
 
     void update(const ros::Time &time, const ros::Duration &period)
@@ -372,23 +393,70 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         // ********* 0. Get states from gazebo *********
         // 0.1 sampling time
         //double dt = period.toSec();
-        //t = t + 0.001;
+        t = t + 0.001;
         
-        double v_tau = 0.1;
+        double v_tau = 0.01;
         double tau_0 = 0;
         double dt;
         curr_time = ros::Time::now();
 
+        for (int i = 0; i < n_joints_; i++)
+        {
+            q_(i) = joints_[i].getPosition();
+            qdot_(i) = joints_[i].getVelocity();
+        }
+
         fk_pos_solver_->JntToCart(q_, x_);
-        printFrame(f0_);
-        f1_ = f0_;
+
+        if (update_round < 2000)
+        {
+            f0_ = get_current_frame();
+            f1_ = p_init_;
+            if (update_round == 0)
+            {
+                printf("update round: %d", update_round);
+                printFrame(f1_, "f1");
+            }
+        }
+        else
+        {
+            if (p_start_reached == false && init_p_reached == true)
+            {
+                f0_ = get_current_frame();
+                f1_ = p_demo_start_;
+            }
+            else if (p_start_reached == true && init_p_reached == false)
+            {
+                f0_ = get_current_frame();
+                f1_ = p_init_;
+            }
+            //printFrame(f1_, "f1");
+            //printf("update round: %d", update_round);
+            distance_to_target = sqrt(pow(f1_.p(0)-x_.p(0),2)+pow(f1_.p(1)-x_.p(1),2)+pow(f1_.p(2)-x_.p(2),2));
+
+            if (distance_to_target <= distance_to_target_limit && p_start_reached == false && init_p_reached == true)
+            {
+                printf("Starting point reached!\n");
+                init_p_reached = false;
+                p_start_reached = true;
+                f1_ = p_init_;
+            }
+            else if (distance_to_target <= distance_to_target_limit && p_start_reached == true && init_p_reached == false)
+            {
+                printf("Init point reached!\n");
+                init_p_reached = true;
+                p_start_reached = false;
+                f1_ = p_demo_start_;
+            }
+        }
+
         V0_ = diff(f0_, f1_)/target_time;
 
-        if (update_round == 1)
+        if (update_round == 0)
         {
             dt = (curr_time - start_time).toSec();
             tau_old = tau_0;
-            xd_ = f0_;
+            xd_ = get_current_frame();
         }
         else
         {
@@ -402,11 +470,13 @@ class DemoController : public controller_interface::Controller<hardware_interfac
             tau_k = 1;
         }
 
+        // For printing
+        e_.data = qd_.data - q_.data;
+
         xerr_temp_ = diff(x_, xd_, 1);
         for (int i = 0; i < n_joints_; i++)
         {
             xerr_(i) = xerr_temp_(i);
-
         }
 
         xd_ = KDL::addDelta(xd_, V0_, dt);
@@ -423,7 +493,17 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         V_cmd_ = xd_temp_ + Kp_.data.cwiseProduct(xerr_);
 
         q_dot_cmd_.data = J_.data.inverse() * V_cmd_;
-        e_dot_cmd_.data = q_dot_cmd_.data - qdot_.data;
+        //e_dot_cmd_.data = q_dot_cmd_.data - qdot_.data;
+
+        if (repulsive_F_control)
+        {
+		    KDL::JntArray q_rep = getRepVelocity();
+		    e_dot_cmd_.data = q_dot_cmd_.data - (qdot_.data + q_rep.data);
+		}
+		else
+		{
+			e_dot_cmd_.data = q_dot_cmd_.data - qdot_.data;
+		}
 
         id_solver_->JntToMass(q_, M_);
         id_solver_->JntToCoriolis(q_, qdot_, C_);
@@ -438,95 +518,23 @@ class DemoController : public controller_interface::Controller<hardware_interfac
             joints_[i].setCommand(tau_d_(i));
         }
 
-        // TODO:Vanha koodi
-        // 0.2 joint state
-        /*for (int i = 0; i < n_joints_; i++)
-        {
-            q_(i) = joints_[i].getPosition();
-            qdot_(i) = joints_[i].getVelocity();
-        }
-
-        // ********* 1. Desired Trajecoty in Joint Space *********
-		
-		printf("***********************************************\n");
-        for (size_t i = 0; i < n_joints_; i++)
-        {
-        	if (i == 1)
-        	{
-        		qd_ddot_(i) = -M_PI * M_PI / 4 * 45 * KDL::deg2rad * sin(M_PI / 2 * t); 
-		        qd_dot_(i) = M_PI / 2 * 45 * KDL::deg2rad * cos(M_PI / 2 * t);          
-		        qd_(i) = 45 * KDL::deg2rad * sin(M_PI / 2* t);
-		        ROS_INFO("qd_ddot: %f, qd_dot: %f, qd: %f", qd_ddot_(i), qd_dot_(i), qd_(i));
-        	}
-            
-            if (stay_still == true)
-            {
-            	qd_ddot_(i) = 0;
-            	qd_dot_(i) = 0;
-            	qd_(i) = 0;
-            }
-            else
-            {
-            	if (update_round == 0)
-            	{
-            		ROS_INFO("Stay still %d", stay_still);
-            	}
-            	
-				if (i == 4)
-				{
-					qd_ddot_(i) = 0.3;
-					qd_dot_(i) = 0.3;
-					qd_(i) = upper_limits_(i);
-				}
-				else
-				{
-		    		qd_ddot_(i) = 0.3;
-			    	qd_dot_(i) = 0.3;
-			    	qd_(i) = 0;
-				}
-            }
-
-        }
-
-        // ********* 2. Motion Controller in Joint Space*********
-        // *** 2.1 Error Definition in Joint Space ***
-        e_.data = qd_.data - q_.data;
-        
-        if (repulsive_F_control)
-        {
-		    KDL::JntArray q_rep = getRepVelocity();
-		    e_dot_.data = qd_dot_.data - (qdot_.data+q_rep.data);
-		}
-		else
-		{
-			e_dot_.data = qd_dot_.data - qdot_.data;
-		}
-		
-        // *** 2.2 Compute model(M,C,G) ***
-        id_solver_->JntToMass(q_, M_);
-        id_solver_->JntToCoriolis(q_, qdot_, C_);
-        id_solver_->JntToGravity(q_, G_); 
-
-        // *** 2.3 Apply Torque Command to Actuator ***
-        
-        //Own code for velocity controller (For velocity controller, K_p=0):
-        aux_d_.data = M_.data * (qd_ddot_.data + Kd_.data.cwiseProduct(e_dot_.data));
-        ROS_INFO("d: %f", Kd_.data(3));
-        comp_d_.data = C_.data + G_.data;
-        tau_d_.data = aux_d_.data + comp_d_.data;
-
-        for (int i = 0; i < n_joints_; i++)
-        {
-            joints_[i].setCommand(tau_d_(i));
-        }
-        */
         // ********* 3. data 저장 *********
         save_data();
 
         // ********* 4. state 출력 *********
-        print_state();
-        
+        //print_state();
+
+        if (update_round % 1000 == 0)
+        {
+            //printf("update round: %d", update_round);
+            //printFrame(f1_, "f1");
+            //KDL::Frame curr_f = get_current_frame();
+            //printFrame(curr_f, "Current frame");
+            printf("\n%f\n", distance_to_target);
+        }
+
         update_round += 1;
+        prev_time = curr_time;
     }
 
     void stopping(const ros::Time &time)
@@ -682,15 +690,18 @@ class DemoController : public controller_interface::Controller<hardware_interfac
     bool stay_still = false;
     int update_round;
     bool repulsive_F_prints = false;
-    bool repulsive_F_control = false;
+    bool repulsive_F_control = true;
     int target_time;
     double tau_k;
     double tau_old;
     ros::Time start_time;
     ros::Time curr_time;
     ros::Time prev_time;
+    double distance_to_target;
+    double distance_to_target_limit;
+    bool p_start_reached = false;
+    bool init_p_reached = false;
 
-    KDL::JntArray q0_, qdot0_, qdotdot0_;
     KDL::JntArray q1_;
     boost::scoped_ptr<KDL::ChainFkSolverPos_recursive> fk_pos_solver_;
     boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver_;
@@ -705,6 +716,8 @@ class DemoController : public controller_interface::Controller<hardware_interfac
     Eigen::Matrix<double, num_taskspace, 1> xd_temp_;
     KDL::Frame f0_;
     KDL::Frame f1_;
+    KDL::Frame p_demo_start_;
+    KDL::Frame p_init_;
     KDL::Twist V0_;
 
     //Joint handles
