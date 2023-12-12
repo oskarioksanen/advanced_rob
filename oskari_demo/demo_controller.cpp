@@ -259,6 +259,34 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         distance_to_target_limit = 0.01;
         start_time = ros::Time::now();
 
+        p_init_ = get_current_frame();
+        init_p_reached = true;
+        double init_roll, init_pitch, init_yaw; // -1.571048
+        p_init_.M.GetRPY(init_roll, init_pitch, init_yaw);
+        double roll_down, pitch_down, yaw_down;
+        roll_down = 1.571048;
+        pitch_down = 0;
+        yaw_down = 1.571048;
+
+        p_demo_start_.p(0) = p_init_.p(0);
+        p_demo_start_.p(1) = p_init_.p(1);
+        p_demo_start_.p(2) = p_init_.p(2) - 0.2;
+        p_demo_start_.M = KDL::Rotation(KDL::Rotation::RPY(init_roll, init_pitch, init_yaw));
+
+        // Touch the ball
+        p_touch_ball_1.p(0) = p_init_.p(0);
+        p_touch_ball_1.p(1) = -0.3;
+        p_touch_ball_1.p(2) = 0.5;
+        p_touch_ball_1.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
+
+        weld_p_1_reached = false;
+        weld_p_2_reached = false;
+
+        weld_point_1.p(0) = 0.2;
+        weld_point_1.p(1) = p_init_.p(1);
+        weld_point_1.p(2) = 0.5;
+        weld_point_1.M = KDL::Rotation(KDL::Rotation::RPY(1.571048, 0, 1.571048));
+
         return true;
     }
 
@@ -274,14 +302,6 @@ class DemoController : public controller_interface::Controller<hardware_interfac
     void starting(const ros::Time &time)
     {
         t = 0.0;
-        p_init_ = get_current_frame();
-        init_p_reached = true;
-        double init_roll, init_pitch, init_yaw;
-        p_init_.M.GetRPY(init_roll, init_pitch, init_yaw);
-        p_demo_start_.p(0) = p_init_.p(0);
-        p_demo_start_.p(1) = p_init_.p(1);
-        p_demo_start_.p(2) = p_init_.p(2)-0.2;
-        p_demo_start_.M = KDL::Rotation(KDL::Rotation::RPY(init_roll, init_pitch, init_yaw));
         ROS_INFO("Starting Demo Controller");
     }
 
@@ -387,6 +407,61 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         printf("\n\n");
     }
 
+    std::vector<KDL::Frame> get_start_goal_frames()
+    {
+        KDL::Frame start_f;
+        KDL::Frame goal_f;
+        if (update_round < 2000)
+        {
+            start_f = get_current_frame();
+            goal_f = p_init_;
+            if (update_round == 0)
+            {
+                printf("update round: %d", update_round);
+                printFrame(goal_f, "f1");
+            }
+        }
+        else
+        {
+            if (p_start_reached == false && init_p_reached == true)
+            {
+                start_f = get_current_frame();
+                goal_f = p_demo_start_;
+                //goal_f = weld_point_1;
+            }
+            else if (p_start_reached == true && init_p_reached == false)
+            {
+                start_f = get_current_frame();
+                goal_f = p_init_;
+            }
+            //printFrame(f1_, "f1");
+            //printf("update round: %d", update_round);
+            distance_to_target = sqrt(pow(goal_f.p(0)-x_.p(0),2)+pow(goal_f.p(1)-x_.p(1),2)+pow(goal_f.p(2)-x_.p(2),2));
+
+            if (distance_to_target <= distance_to_target_limit && p_start_reached == false && init_p_reached == true)
+            {
+                printf("Starting point reached!\n");
+                init_p_reached = false;
+                p_start_reached = true;
+                goal_f = p_init_;
+            }
+            else if (distance_to_target <= distance_to_target_limit && p_start_reached == true && init_p_reached == false)
+            {
+                printf("Init point reached!\n");
+                init_p_reached = true;
+                p_start_reached = false;
+                goal_f = p_demo_start_;
+            }
+        }
+
+        std::vector<KDL::Frame> frames_to_return;
+        frames_to_return.push_back(start_f);
+        frames_to_return.push_back(goal_f);
+
+        return frames_to_return;
+
+    }
+
     void update(const ros::Time &time, const ros::Duration &period)
     {	
     	
@@ -408,47 +483,10 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 
         fk_pos_solver_->JntToCart(q_, x_);
 
-        if (update_round < 2000)
-        {
-            f0_ = get_current_frame();
-            f1_ = p_init_;
-            if (update_round == 0)
-            {
-                printf("update round: %d", update_round);
-                printFrame(f1_, "f1");
-            }
-        }
-        else
-        {
-            if (p_start_reached == false && init_p_reached == true)
-            {
-                f0_ = get_current_frame();
-                f1_ = p_demo_start_;
-            }
-            else if (p_start_reached == true && init_p_reached == false)
-            {
-                f0_ = get_current_frame();
-                f1_ = p_init_;
-            }
-            //printFrame(f1_, "f1");
-            //printf("update round: %d", update_round);
-            distance_to_target = sqrt(pow(f1_.p(0)-x_.p(0),2)+pow(f1_.p(1)-x_.p(1),2)+pow(f1_.p(2)-x_.p(2),2));
-
-            if (distance_to_target <= distance_to_target_limit && p_start_reached == false && init_p_reached == true)
-            {
-                printf("Starting point reached!\n");
-                init_p_reached = false;
-                p_start_reached = true;
-                f1_ = p_init_;
-            }
-            else if (distance_to_target <= distance_to_target_limit && p_start_reached == true && init_p_reached == false)
-            {
-                printf("Init point reached!\n");
-                init_p_reached = true;
-                p_start_reached = false;
-                f1_ = p_demo_start_;
-            }
-        }
+        std::vector<KDL::Frame> temp_frames;
+        temp_frames = get_start_goal_frames();
+        f0_ = temp_frames[0];
+        f1_ = temp_frames[1];
 
         V0_ = diff(f0_, f1_)/target_time;
 
@@ -527,7 +565,7 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         if (update_round % 1000 == 0)
         {
             //printf("update round: %d", update_round);
-            //printFrame(f1_, "f1");
+            printFrame(f1_, "f1");
             //KDL::Frame curr_f = get_current_frame();
             //printFrame(curr_f, "Current frame");
             printf("\n%f\n", distance_to_target);
@@ -690,7 +728,7 @@ class DemoController : public controller_interface::Controller<hardware_interfac
     bool stay_still = false;
     int update_round;
     bool repulsive_F_prints = false;
-    bool repulsive_F_control = true;
+    bool repulsive_F_control = false;
     int target_time;
     double tau_k;
     double tau_old;
@@ -701,6 +739,20 @@ class DemoController : public controller_interface::Controller<hardware_interfac
     double distance_to_target_limit;
     bool p_start_reached = false;
     bool init_p_reached = false;
+    KDL::Frame weld_point_1;
+    KDL::Frame weld_point_2;
+    bool weld_p_1_reached;
+    bool weld_p_2_reached;
+
+    // Ball touch points
+    KDL::Frame p_touch_ball_1;
+    KDL::Frame p_touch_ball_2;
+    KDL::Frame p_touch_ball_3;
+    KDL::Frame p_touch_ball_4;
+    bool touch_ball_1_reached;
+    bool touch_ball_2_reached;
+    bool touch_ball_3_reached;
+    bool touch_ball_4_reached;
 
     KDL::JntArray q1_;
     boost::scoped_ptr<KDL::ChainFkSolverPos_recursive> fk_pos_solver_;
