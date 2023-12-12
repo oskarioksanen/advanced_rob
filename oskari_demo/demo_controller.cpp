@@ -4,6 +4,7 @@
 
 #include <pluginlib/class_list_macros.h>
 #include <std_msgs/Float64MultiArray.h>
+#include <std_msgs/String.h>
 
 #include <urdf/model.h>
 
@@ -241,6 +242,10 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 
         pub_SaveData_ = n.advertise<std_msgs::Float64MultiArray>("SaveData", 1000); // 뒤에 숫자는?
 
+        // 6.2 subsriber
+        sub_input_ = n.subscribe<std_msgs::String>("/user_input_topic",
+         1, &DemoController::userInputCommandCB, this);
+
         lower_limits_(0)=-3.14;
         upper_limits_(0)=3.14;
         lower_limits_(1)=-2.35;
@@ -255,10 +260,17 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         upper_limits_(5)=3.14;
         
         target_time = 5;
+        update_counter = 0;
         update_round = 0;
-        distance_to_target_limit = 0.02;
+        distance_to_target_limit = 0.01;
         start_time = ros::Time::now();
         last_approached_ball = 0;
+        approach_p_start = true;
+        approach_ball_1 = false;
+        approach_ball_2 = false;
+        approach_ball_3 = false;
+        approach_ball_4 = false;
+        goal_point_acquired = false;
 
         double init_roll, init_pitch, init_yaw; // -1.571048
         init_roll = -1.571048;
@@ -274,6 +286,11 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         p_demo_start_.p(2) = 0.65;
         p_demo_start_.M = KDL::Rotation(KDL::Rotation::RPY(init_roll, init_pitch, init_yaw));
 
+        p_start_curr_orientation_.p(0) = 0;
+        p_start_curr_orientation_.p(1) = 0;
+        p_start_curr_orientation_.p(2) = 0.65;
+        p_start_curr_orientation_.M = KDL::Rotation(KDL::Rotation::RPY(init_roll, init_pitch, init_yaw));
+
         // Touch the ball 1
         p_touch_ball_1.p(0) = p_demo_start_.p(0);
         p_touch_ball_1.p(1) = p_demo_start_.p(1) + 0.3;
@@ -281,22 +298,22 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         p_touch_ball_1.M = KDL::Rotation(KDL::Rotation::RPY(3, 3, 0));
 
         // Touch the ball 2
-        p_touch_ball_2.p(0) = p_demo_start_.p(0);
-        p_touch_ball_2.p(1) = p_demo_start_.p(1) - 0.3;
+        p_touch_ball_2.p(0) = p_demo_start_.p(0) + 0.3;
+        p_touch_ball_2.p(1) = p_demo_start_.p(1);
         p_touch_ball_2.p(2) = p_demo_start_.p(2);
-        p_touch_ball_2.M = KDL::Rotation(KDL::Rotation::RPY(0, 3, 0));
+        p_touch_ball_2.M = KDL::Rotation(KDL::Rotation::RPY(-1.5, -1.5, 0));
 
         // Touch the ball 3
-        p_touch_ball_3.p(0) = p_demo_start_.p(0) - 0.3;
-        p_touch_ball_3.p(1) = p_demo_start_.p(1);
+        p_touch_ball_3.p(0) = p_demo_start_.p(0);
+        p_touch_ball_3.p(1) = p_demo_start_.p(1) - 0.3;
         p_touch_ball_3.p(2) = p_demo_start_.p(2);
-        p_touch_ball_3.M = KDL::Rotation(KDL::Rotation::RPY(1.5, 1.5, 0));
+        p_touch_ball_3.M = KDL::Rotation(KDL::Rotation::RPY(0, 3, 0));
 
         // Touch the ball 4
-        p_touch_ball_4.p(0) = p_demo_start_.p(0) + 0.3;
+        p_touch_ball_4.p(0) = p_demo_start_.p(0) - 0.3;
         p_touch_ball_4.p(1) = p_demo_start_.p(1);
         p_touch_ball_4.p(2) = p_demo_start_.p(2);
-        p_touch_ball_4.M = KDL::Rotation(KDL::Rotation::RPY(1.5, -1.5, 0));
+        p_touch_ball_4.M = KDL::Rotation(KDL::Rotation::RPY(1.5, 1.5, 0));
 
         weld_p_1_reached = false;
         weld_p_2_reached = false;
@@ -318,12 +335,16 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         }
     }
 
+    void userInputCommandCB(const std_msgs::String::ConstPtr &keyboard_msg)
+    {
+        printf("%s", keyboard_msg);
+    }
+
     void starting(const ros::Time &time)
     {
         p_init_ = get_current_frame();
         p_init_.p(2) = p_init_.p(2) - 0.05;
         init_p_reached = true;
-        approach_p_start = true;
         t = 0.0;
         ROS_INFO("Starting Demo Controller");
     }
@@ -333,8 +354,8 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 	{
 		KDL::JntArray rep_velocities;
 		rep_velocities.data = Eigen::VectorXd::Zero(n_joints_);
-		int k = 0.7;
-		double q_star = 1.2;
+		int k = 2;
+		double q_star = 0.7;
 		double F;
 		double q_limit_dist;
 		
@@ -430,7 +451,7 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         printf("\n\n");
     }
 
-    std::vector<KDL::Frame> get_start_goal_frames()
+    void get_start_goal_frames(KDL::Frame& f0_, KDL::Frame& f1_)
     {
         KDL::Frame start_f;
         KDL::Frame goal_f;
@@ -450,48 +471,48 @@ class DemoController : public controller_interface::Controller<hardware_interfac
                 approach_ball_3 == false && approach_ball_4 == false &&
                 approach_p_start == true)
             {
-                start_f = get_current_frame();
-                goal_f = p_demo_start_;
+                f0_ = get_current_frame();
+                f1_ = p_demo_start_;
                 //goal_f = weld_point_1;
             }
             else if (approach_ball_1 == true && approach_ball_2 == false &&
                     approach_ball_3 == false && approach_ball_4 == false &&
                     approach_p_start == false)
             {
-                start_f = get_current_frame();
-                goal_f = p_touch_ball_1;
+                f0_ = get_current_frame();
+                f1_ = p_touch_ball_1;
             }
             else if (approach_ball_1 == false && approach_ball_2 == true &&
                     approach_ball_3 == false && approach_ball_4 == false &&
                     approach_p_start == false)
             {
-                start_f = get_current_frame();
-                goal_f = p_touch_ball_2;
+                f0_ = get_current_frame();
+                f1_ = p_touch_ball_2;
             }
             else if (approach_ball_1 == false && approach_ball_2 == false &&
                     approach_ball_3 == true && approach_ball_4 == false &&
                     approach_p_start == false)
             {
-                start_f = get_current_frame();
-                goal_f = p_touch_ball_3;
+                f0_ = get_current_frame();
+                f1_ = p_touch_ball_3;
             }
             else if (approach_ball_1 == false && approach_ball_2 == false &&
                     approach_ball_3 == false && approach_ball_4 == true &&
                     approach_p_start == false)
             {
-                start_f = get_current_frame();
-                goal_f = p_touch_ball_4;
+                f0_ = get_current_frame();
+                f1_ = p_touch_ball_4;
             }
-            else
+            /*else
             {
                 printf("Elsessä!");
                 start_f = get_current_frame();
                 goal_f = p_demo_start_;
-            }
+            }*/
 
             //printFrame(f1_, "f1");
             //printf("update round: %d", update_round);
-            distance_to_target = sqrt(pow(goal_f.p(0)-x_.p(0),2)+pow(goal_f.p(1)-x_.p(1),2)+pow(goal_f.p(2)-x_.p(2),2));
+            distance_to_target = sqrt(pow(f1_.p(0)-x_.p(0),2)+pow(f1_.p(1)-x_.p(1),2)+pow(f1_.p(2)-x_.p(2),2));
 
             if (distance_to_target <= distance_to_target_limit && approach_p_start == true)
             {
@@ -547,9 +568,141 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         std::vector<KDL::Frame> frames_to_return;
         frames_to_return.push_back(start_f);
         frames_to_return.push_back(goal_f);
+        update_counter += 1;
+    }
 
-        return frames_to_return;
+    void get_start_goal_frames_one_update(KDL::Frame& f0_, KDL::Frame& f1_)
+    {
+        KDL::Frame start_f;
+        KDL::Frame goal_f;
+        if (update_round < 2000)
+        {
+            start_f = get_current_frame();
+            goal_f = p_init_;
+            if (update_round == 0)
+            {
+                printf("update round: %d", update_round);
+                printFrame(goal_f, "f1");
+            }
+        }
+        else
+        {
+            if (update_counter % (target_time * 1000) == 0)
+            {
+                goal_point_acquired = false;
+            }
+            if (approach_ball_1 == false && approach_ball_2 == false &&
+                approach_ball_3 == false && approach_ball_4 == false &&
+                approach_p_start == true && goal_point_acquired == false)
+            {
+                f0_ = get_current_frame();
+                f1_ = p_demo_start_;
+                //goal_f = weld_point_1;
+                goal_point_acquired = true;
+            }
+            else if (approach_ball_1 == true && approach_ball_2 == false &&
+                    approach_ball_3 == false && approach_ball_4 == false &&
+                    approach_p_start == false && goal_point_acquired == false)
+            {
+                f0_ = get_current_frame();
+                f1_ = p_touch_ball_1;
+                goal_point_acquired = true;
+            }
+            else if (approach_ball_1 == false && approach_ball_2 == true &&
+                    approach_ball_3 == false && approach_ball_4 == false &&
+                    approach_p_start == false && goal_point_acquired == false)
+            {
+                f0_ = get_current_frame();
+                f1_ = p_touch_ball_2;
+                goal_point_acquired = true;
+            }
+            else if (approach_ball_1 == false && approach_ball_2 == false &&
+                    approach_ball_3 == true && approach_ball_4 == false &&
+                    approach_p_start == false && goal_point_acquired == false)
+            {
+                f0_ = get_current_frame();
+                f1_ = p_touch_ball_3;
+                goal_point_acquired = true;
+            }
+            else if (approach_ball_1 == false && approach_ball_2 == false &&
+                    approach_ball_3 == false && approach_ball_4 == true &&
+                    approach_p_start == false && goal_point_acquired == false)
+            {
+                f0_ = get_current_frame();
+                f1_ = p_touch_ball_4;
+                goal_point_acquired = true;
+            }
+            /*else
+            {
+                printf("Elsessä!");
+                start_f = get_current_frame();
+                goal_f = p_demo_start_;
+            }*/
 
+            //printFrame(f1_, "f1");
+            //printf("update round: %d", update_round);
+            distance_to_target = sqrt(pow(f1_.p(0)-x_.p(0),2)+pow(f1_.p(1)-x_.p(1),2)+pow(f1_.p(2)-x_.p(2),2));
+
+            if (distance_to_target <= distance_to_target_limit && approach_p_start == true)
+            {
+                printf("Starting point reached!\n");
+                approach_p_start = false;
+                if (last_approached_ball == 0 || last_approached_ball == 4)
+                {
+                    approach_ball_1 = true;
+                    last_approached_ball = 1;
+                }
+                else if(last_approached_ball == 1)
+                {
+                    approach_ball_2 = true;
+                    last_approached_ball = 2;
+                }
+                else if(last_approached_ball == 2)
+                {
+                    approach_ball_3 = true;
+                    last_approached_ball = 3;
+                }
+                else if(last_approached_ball == 3)
+                {
+                    approach_ball_4 = true;
+                    last_approached_ball = 4;
+                }
+                goal_point_acquired = false;
+            }
+            else if (distance_to_target <= distance_to_target_limit &&  approach_ball_1 == true)
+            {
+                printf("Ball 1 touched!\n");
+                approach_p_start = true;
+                approach_ball_1 = false;
+                goal_point_acquired = false;
+            }
+            else if (distance_to_target <= distance_to_target_limit && approach_ball_2 == true)
+            {
+                printf("Ball 2 touched!\n");
+                approach_p_start = true;
+                approach_ball_2 = false;
+                goal_point_acquired = false;
+            }
+            else if (distance_to_target <= distance_to_target_limit && approach_ball_3 == true)
+            {
+                printf("Ball 3 touched!\n");
+                approach_p_start = true;
+                approach_ball_3 = false;
+                goal_point_acquired = false;
+            }
+            else if (distance_to_target <= distance_to_target_limit && approach_ball_4 == true)
+            {
+                printf("Ball 4 touched!\n");
+                approach_p_start = true;
+                approach_ball_4 = false;
+                goal_point_acquired = false;
+            }
+        }
+
+        std::vector<KDL::Frame> frames_to_return;
+        frames_to_return.push_back(start_f);
+        frames_to_return.push_back(goal_f);
+        update_counter += 1;
     }
 
     void update(const ros::Time &time, const ros::Duration &period)
@@ -573,10 +726,12 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 
         fk_pos_solver_->JntToCart(q_, x_);
 
-        std::vector<KDL::Frame> temp_frames;
-        temp_frames = get_start_goal_frames();
-        f0_ = temp_frames[0];
-        f1_ = temp_frames[1];
+        //std::vector<KDL::Frame> temp_frames;
+        //temp_frames = get_start_goal_frames();
+        //f0_ = temp_frames[0];
+        //f1_ = temp_frames[1];
+        get_start_goal_frames(f0_, f1_);
+        //get_start_goal_frames_one_update(f0_, f1_);
 
         V0_ = diff(f0_, f1_)/target_time;
 
@@ -619,6 +774,20 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 
         jnt_to_jac_solver_->JntToJac(q_, J_);
         V_cmd_ = xd_temp_ + Kp_.data.cwiseProduct(xerr_);
+        /*Eigen::MatrixXd J_inv;
+        float det = J_.data.determinant();
+        if (((det >= 0 && det <= 0.001) || (det <= 0 && det >= -0.001)) && update_round > 2000)
+        {
+        	pseudo_inverse(J_.data,J_inv,false);
+        	printf("Close to singularity, use pseudo inverse!\n");
+        	printf("Det here: %f\n", (double)det);
+        }
+        else
+        {
+        	J_inv = J_.data.inverse();
+        	//ROS_INFO("Not close to singularity, use basic inverse");
+        	//ROS_INFO("Det here: %f", (double)det);
+        }*/
 
         q_dot_cmd_.data = J_.data.inverse() * V_cmd_;
         //e_dot_cmd_.data = q_dot_cmd_.data - qdot_.data;
@@ -658,9 +827,10 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         if (update_round % 1000 == 0)
         {
             //printf("update round: %d", update_round);
-            //printFrame(f1_, "f1");
+            // printFrame(f1_, "f1");
             //KDL::Frame curr_f = get_current_frame();
             //printFrame(curr_f, "Current frame");
+            printf("\n%d, %d, %d, %d, %d\n", approach_p_start, approach_ball_1, approach_ball_2, approach_ball_3, approach_ball_4);
             printf("\n%f\n", distance_to_target);
         }
 
@@ -847,6 +1017,9 @@ class DemoController : public controller_interface::Controller<hardware_interfac
     bool approach_ball_3;
     bool approach_ball_4;
     int last_approached_ball;
+    bool goal_point_acquired = false;
+    int update_counter;
+    ros::Subscriber sub_input_;
 
     KDL::JntArray q1_;
     boost::scoped_ptr<KDL::ChainFkSolverPos_recursive> fk_pos_solver_;
@@ -863,6 +1036,7 @@ class DemoController : public controller_interface::Controller<hardware_interfac
     KDL::Frame f0_;
     KDL::Frame f1_;
     KDL::Frame p_demo_start_;
+    KDL::Frame p_start_curr_orientation_;
     KDL::Frame p_init_;
     KDL::Twist V0_;
 
@@ -917,3 +1091,4 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 };
 }; // namespace arm_controllers
 PLUGINLIB_EXPORT_CLASS(arm_controllers::DemoController, controller_interface::ControllerBase)
+
