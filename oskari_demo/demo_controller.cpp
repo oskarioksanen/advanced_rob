@@ -36,7 +36,7 @@
 #define f 1
 #define t_set 1
 
-int PRINT_INTERVAL = 100;
+int PRINT_INTERVAL = 1000;
 
 namespace arm_controllers
 {
@@ -262,7 +262,7 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         target_time = 5;
         update_counter = 0;
         update_round = 0;
-        distance_to_target_limit = 0.01;
+        distance_to_target_limit = 0.015;
         start_time = ros::Time::now();
         last_approached_ball = 0;
         approach_p_start = true;
@@ -275,7 +275,12 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         double init_roll, init_pitch, init_yaw; // -1.571048
         init_roll = -1.571048;
         init_pitch = 0;
-        init_yaw = -1.571048;
+        init_yaw = 0;
+
+        //init_roll = 0; // 0 Vihreeseen päin, -1.57 ylös, 1.57 alas
+        //init_pitch = 0;
+        //init_yaw = 0; // 0 Punanen, 1.57 Sininen, 2*1.57 oranssi
+        // Kaikki nolla -> Punaiseen päin
         double roll_down, pitch_down, yaw_down;
         roll_down = -1.571048; // Or positive
         pitch_down = 0;
@@ -286,34 +291,33 @@ class DemoController : public controller_interface::Controller<hardware_interfac
         p_demo_start_.p(2) = 0.65;
         p_demo_start_.M = KDL::Rotation(KDL::Rotation::RPY(init_roll, init_pitch, init_yaw));
 
-        p_start_curr_orientation_.p(0) = 0;
-        p_start_curr_orientation_.p(1) = 0;
-        p_start_curr_orientation_.p(2) = 0.65;
-        p_start_curr_orientation_.M = KDL::Rotation(KDL::Rotation::RPY(init_roll, init_pitch, init_yaw));
-
-        // Touch the ball 1
+        // Touch the ball 1 - Orange
         p_touch_ball_1.p(0) = p_demo_start_.p(0);
         p_touch_ball_1.p(1) = p_demo_start_.p(1) + 0.3;
         p_touch_ball_1.p(2) = p_demo_start_.p(2);
-        p_touch_ball_1.M = KDL::Rotation(KDL::Rotation::RPY(3, 3, 0));
+        //p_touch_ball_1.M = KDL::Rotation(KDL::Rotation::RPY(3, 3, 0));
+        p_touch_ball_1.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 2*1.571048));
 
-        // Touch the ball 2
+        // Touch the ball 2 - Blue
         p_touch_ball_2.p(0) = p_demo_start_.p(0) + 0.3;
         p_touch_ball_2.p(1) = p_demo_start_.p(1);
         p_touch_ball_2.p(2) = p_demo_start_.p(2);
-        p_touch_ball_2.M = KDL::Rotation(KDL::Rotation::RPY(-1.5, -1.5, 0));
+        //p_touch_ball_2.M = KDL::Rotation(KDL::Rotation::RPY(1.5, -1.5, 0));
+        p_touch_ball_2.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 1.571048));
 
-        // Touch the ball 3
+        // Touch the ball 3 - Red
         p_touch_ball_3.p(0) = p_demo_start_.p(0);
         p_touch_ball_3.p(1) = p_demo_start_.p(1) - 0.3;
         p_touch_ball_3.p(2) = p_demo_start_.p(2);
-        p_touch_ball_3.M = KDL::Rotation(KDL::Rotation::RPY(0, 3, 0));
+        //p_touch_ball_3.M = KDL::Rotation(KDL::Rotation::RPY(0, 3, 0));
+        p_touch_ball_3.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, 0));
 
-        // Touch the ball 4
+        // Touch the ball 4 - Green
         p_touch_ball_4.p(0) = p_demo_start_.p(0) - 0.3;
         p_touch_ball_4.p(1) = p_demo_start_.p(1);
         p_touch_ball_4.p(2) = p_demo_start_.p(2);
-        p_touch_ball_4.M = KDL::Rotation(KDL::Rotation::RPY(1.5, 1.5, 0));
+        //p_touch_ball_4.M = KDL::Rotation(KDL::Rotation::RPY(1.5, 1.5, 0));
+        p_touch_ball_4.M = KDL::Rotation(KDL::Rotation::RPY(0, 0, -1.571048));
 
         weld_p_1_reached = false;
         weld_p_2_reached = false;
@@ -337,7 +341,51 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 
     void userInputCommandCB(const std_msgs::String::ConstPtr &keyboard_msg)
     {
-        printf("%s", keyboard_msg);
+        if (keyboard_msg->data == "orange")
+        {
+            printf("Orange\n");
+            approach_ball_1 = true;
+            approach_ball_2 = false;
+            approach_ball_3 = false;
+            approach_ball_4 = false;
+            approach_p_start = false;
+        }
+        else if (keyboard_msg->data == "blue")
+        {
+            printf("Blue\n");
+            approach_ball_1 = false;
+            approach_ball_2 = true;
+            approach_ball_3 = false;
+            approach_ball_4 = false;
+            approach_p_start = false;
+        }
+        else if (keyboard_msg->data == "red")
+        {
+            printf("Red\n");
+            approach_ball_1 = false;
+            approach_ball_2 = false;
+            approach_ball_3 = true;
+            approach_ball_4 = false;
+            approach_p_start = false;
+        }
+        else if (keyboard_msg->data == "green")
+        {
+            printf("Green\n");
+            approach_ball_1 = false;
+            approach_ball_2 = false;
+            approach_ball_3 = false;
+            approach_ball_4 = true;
+            approach_p_start = false;
+        }
+        else if (keyboard_msg->data == "start")
+        {
+            printf("Start\n");
+            approach_ball_1 = false;
+            approach_ball_2 = false;
+            approach_ball_3 = false;
+            approach_ball_4 = false;
+            approach_p_start = true;
+        }
     }
 
     void starting(const ros::Time &time)
@@ -354,8 +402,8 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 	{
 		KDL::JntArray rep_velocities;
 		rep_velocities.data = Eigen::VectorXd::Zero(n_joints_);
-		int k = 2;
-		double q_star = 0.7;
+		int k = 1;
+		double q_star = 0.6;
 		double F;
 		double q_limit_dist;
 		
@@ -371,8 +419,8 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 			
 			if (update_round % PRINT_INTERVAL == 0 && repulsive_F_prints)
 			{
-				ROS_INFO("q_(%d) here:  %f", i, q_(i));
-				ROS_INFO("i==%d, q_limit_dist %f", i, q_limit_dist);
+				printf("q_(%d) here:  %f\n", i, q_(i));
+				printf("i==%d, q_limit_dist %f\n", i, q_limit_dist);
 			}
 			
 			if (q_limit_dist <= q_star)
@@ -394,8 +442,7 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 			
 			if (update_round % PRINT_INTERVAL == 0 && repulsive_F_prints)
 			{
-				ROS_INFO("F: %f", F);
-				ROS_INFO(" ");
+				printf("F: %f\n", F);
 			}
 			
 			rep_velocities(i) = F;
@@ -514,32 +561,7 @@ class DemoController : public controller_interface::Controller<hardware_interfac
             //printf("update round: %d", update_round);
             distance_to_target = sqrt(pow(f1_.p(0)-x_.p(0),2)+pow(f1_.p(1)-x_.p(1),2)+pow(f1_.p(2)-x_.p(2),2));
 
-            if (distance_to_target <= distance_to_target_limit && approach_p_start == true)
-            {
-                printf("Starting point reached!\n");
-                approach_p_start = false;
-                if (last_approached_ball == 0 || last_approached_ball == 4)
-                {
-                    approach_ball_1 = true;
-                    last_approached_ball = 1;
-                }
-                else if(last_approached_ball == 1)
-                {
-                    approach_ball_2 = true;
-                    last_approached_ball = 2;
-                }
-                else if(last_approached_ball == 2)
-                {
-                    approach_ball_3 = true;
-                    last_approached_ball = 3;
-                }
-                else if(last_approached_ball == 3)
-                {
-                    approach_ball_4 = true;
-                    last_approached_ball = 4;
-                }
-            }
-            else if (distance_to_target <= distance_to_target_limit &&  approach_ball_1 == true)
+            if (distance_to_target <= distance_to_target_limit &&  approach_ball_1 == true)
             {
                 printf("Ball 1 touched!\n");
                 approach_p_start = true;
@@ -990,7 +1012,7 @@ class DemoController : public controller_interface::Controller<hardware_interfac
     double t;
     bool stay_still = false;
     int update_round;
-    bool repulsive_F_prints = false;
+    bool repulsive_F_prints = true;
     bool repulsive_F_control = true;
     int target_time;
     double tau_k;
@@ -1036,7 +1058,6 @@ class DemoController : public controller_interface::Controller<hardware_interfac
     KDL::Frame f0_;
     KDL::Frame f1_;
     KDL::Frame p_demo_start_;
-    KDL::Frame p_start_curr_orientation_;
     KDL::Frame p_init_;
     KDL::Twist V0_;
 
@@ -1091,4 +1112,3 @@ class DemoController : public controller_interface::Controller<hardware_interfac
 };
 }; // namespace arm_controllers
 PLUGINLIB_EXPORT_CLASS(arm_controllers::DemoController, controller_interface::ControllerBase)
-
